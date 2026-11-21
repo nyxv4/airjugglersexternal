@@ -157,8 +157,21 @@ namespace NyxExternal.games.universal.visuals
                         next.lines.Add(new Line { a = new Point(b.Left - 5, b.Bottom), b = new Point(b.Left - 5, b.Bottom - (b.Height * hp)), c = Colors.Lime, w = 2 });
                     }
 
-                    if (Settings.Visuals.Name) next.texts.Add(new Text { t = p.Name, p = new Point(b.Left + b.Width / 2, b.Top - 15), c = Colors.White, s = Settings.Visuals.NameSize, ctr = true });
-                    if (Settings.Visuals.Distance) next.texts.Add(new Text { t = $"{(int)dist}m", p = new Point(b.Left + b.Width / 2, b.Bottom + 2), c = Colors.White, s = Settings.Visuals.DistanceSize, ctr = true });
+                    Color teamCol = team_color(p);
+                    if (Settings.Visuals.Name) next.texts.Add(new Text { t = p.Name, p = new Point(b.Left + b.Width / 2, b.Top - 15), c = Settings.Visuals.TeamColorESP ? teamCol : Colors.White, s = Settings.Visuals.NameSize, ctr = true });
+                    if (Settings.Visuals.Distance) next.texts.Add(new Text { t = $"{(int)dist}m", p = new Point(b.Left + b.Width / 2, b.Bottom + 2), c = Settings.Visuals.TeamColorESP ? teamCol : Colors.White, s = Settings.Visuals.DistanceSize, ctr = true });
+
+                    if (Settings.Visuals.WeaponESP)
+                    {
+                        var tool = p.Character.FindFirstChildOfClass("Tool");
+                        if (tool.IsValid)
+                        {
+                            string wname = "";
+                            try { wname = tool.GetName(); } catch { }
+                            if (!string.IsNullOrEmpty(wname))
+                                next.texts.Add(new Text { t = wname, p = new Point(b.Left + b.Width / 2, b.Bottom + 2 + Settings.Visuals.DistanceSize + 2), c = teamCol, s = Settings.Visuals.DistanceSize * 0.8, ctr = true });
+                        }
+                    }
 
                     if (Settings.Visuals.HeadCircle && head2d.x != -1)
                         next.dots.Add(new Dot { p = new Point(head2d.x, head2d.y), r = (b.Height / 12) * Settings.Visuals.HeadCircleMaxScale, c = Colors.White });
@@ -227,6 +240,23 @@ namespace NyxExternal.games.universal.visuals
                 lock (locker) currentScene = next;
                 Thread.Sleep(1);
             }
+        }
+
+        private static readonly Color[] team_palette = {
+            Color.FromRgb(255, 80, 80), Color.FromRgb(80, 160, 255), Color.FromRgb(80, 255, 120),
+            Color.FromRgb(255, 210, 60), Color.FromRgb(200, 90, 255), Color.FromRgb(60, 230, 230),
+            Color.FromRgb(255, 140, 40), Color.FromRgb(160, 255, 80)
+        };
+
+        private static Color team_color(RobloxPlayer p)
+        {
+            try
+            {
+                long t = p.Team.IsValid ? p.Team.Address : p.address;
+                int idx = (int)((ulong)t % (ulong)team_palette.Length);
+                return team_palette[idx];
+            }
+            catch { return Colors.White; }
         }
 
         public static Vector3 GetPos(SDKInstance i, Dictionary<long, long> c)

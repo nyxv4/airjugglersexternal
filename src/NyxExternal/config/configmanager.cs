@@ -17,6 +17,11 @@ namespace NyxExternal.config
         public ChecksConfig Checks { get; set; } = new();
         public NetworkConfig Network { get; set; } = new();
         public FlightConfig Flight { get; set; } = new();
+        public TriggerbotConfig Triggerbot { get; set; } = new();
+        public HitboxConfig Hitbox { get; set; } = new();
+        public SpinbotConfig Spinbot { get; set; } = new();
+        public GravityConfig Gravity { get; set; } = new();
+        public KnockbackConfig Knockback { get; set; } = new();
     }
 
     public class HumanoidConfig
@@ -50,6 +55,8 @@ namespace NyxExternal.config
         public bool RemoveBorders { get; set; }
         public bool ChinaHat { get; set; }
         public bool LocalPlayerESP { get; set; }
+        public bool WeaponESP { get; set; } = true;
+        public bool TeamColorESP { get; set; } = true;
         public int TracersStart { get; set; }
         public float NameSize { get; set; } = 12f;
         public float DistanceSize { get; set; } = 15f;
@@ -113,6 +120,44 @@ namespace NyxExternal.config
         public KeyBindConfig VFlightBind { get; set; } = new("VFlightBind");
         public bool VFlight { get; set; }
         public float VFlightSpeed { get; set; } = 1.5f;
+    }
+
+    public class TriggerbotConfig
+    {
+        public KeyBindConfig TriggerKey { get; set; } = new("Triggerbot");
+        public bool Enabled { get; set; } = true;
+        public float FovRadius { get; set; } = 40f;
+        public int DelayMs { get; set; } = 50;
+        public float Range { get; set; } = 300f;
+    }
+
+    public class HitboxConfig
+    {
+        public KeyBindConfig HitboxKey { get; set; } = new("Hitbox");
+        public bool Enabled { get; set; } = true;
+        public float Multiplier { get; set; } = 2.5f;
+        public float Range { get; set; } = 300f;
+    }
+
+    public class SpinbotConfig
+    {
+        public KeyBindConfig SpinKey { get; set; } = new("Spinbot");
+        public bool Enabled { get; set; } = true;
+        public float Speed { get; set; } = 720f;
+    }
+
+    public class GravityConfig
+    {
+        public KeyBindConfig GravKey { get; set; } = new("Gravity");
+        public bool Enabled { get; set; } = true;
+        public float Value { get; set; } = 30f;
+    }
+
+    public class KnockbackConfig
+    {
+        public KeyBindConfig KbKey { get; set; } = new("Knockback");
+        public bool Enabled { get; set; } = true;
+        public float Dampen { get; set; } = 0.2f;
     }
 
     public class KeyBindConfig
@@ -242,6 +287,8 @@ namespace NyxExternal.config
                     RemoveBorders = Settings.Visuals.RemoveBorders,
                     ChinaHat = Settings.Visuals.ChinaHat,
                     LocalPlayerESP = Settings.Visuals.LocalPlayerESP,
+                    WeaponESP = Settings.Visuals.WeaponESP,
+                    TeamColorESP = Settings.Visuals.TeamColorESP,
                     TracersStart = Settings.Visuals.TracersStart,
                     NameSize = Settings.Visuals.NameSize,
                     DistanceSize = Settings.Visuals.DistanceSize,
@@ -294,6 +341,39 @@ namespace NyxExternal.config
                     VFlightBind = new() { Key = Settings.Flight.VFlightBind.Key, MouseButton = Settings.Flight.VFlightBind.MouseButton, ControllerButton = Settings.Flight.VFlightBind.ControllerButton, Waiting = Settings.Flight.VFlightBind.Waiting, Label = Settings.Flight.VFlightBind.Label },
                     VFlight = Settings.Flight.VFlight,
                     VFlightSpeed = Settings.Flight.VFlightSpeed
+                },
+                Triggerbot = new()
+                {
+                    TriggerKey = new() { Key = Settings.Triggerbot.TriggerKey.Key, MouseButton = Settings.Triggerbot.TriggerKey.MouseButton, ControllerButton = Settings.Triggerbot.TriggerKey.ControllerButton, Waiting = Settings.Triggerbot.TriggerKey.Waiting, Label = Settings.Triggerbot.TriggerKey.Label },
+                    Enabled = Settings.Triggerbot.Enabled,
+                    FovRadius = Settings.Triggerbot.FovRadius,
+                    DelayMs = Settings.Triggerbot.DelayMs,
+                    Range = Settings.Triggerbot.Range
+                },
+                Hitbox = new()
+                {
+                    HitboxKey = new() { Key = Settings.Hitbox.HitboxKey.Key, MouseButton = Settings.Hitbox.HitboxKey.MouseButton, ControllerButton = Settings.Hitbox.HitboxKey.ControllerButton, Waiting = Settings.Hitbox.HitboxKey.Waiting, Label = Settings.Hitbox.HitboxKey.Label },
+                    Enabled = Settings.Hitbox.Enabled,
+                    Multiplier = Settings.Hitbox.Multiplier,
+                    Range = Settings.Hitbox.Range
+                },
+                Spinbot = new()
+                {
+                    SpinKey = new() { Key = Settings.Spinbot.SpinKey.Key, MouseButton = Settings.Spinbot.SpinKey.MouseButton, ControllerButton = Settings.Spinbot.SpinKey.ControllerButton, Waiting = Settings.Spinbot.SpinKey.Waiting, Label = Settings.Spinbot.SpinKey.Label },
+                    Enabled = Settings.Spinbot.Enabled,
+                    Speed = Settings.Spinbot.Speed
+                },
+                Gravity = new()
+                {
+                    GravKey = new() { Key = Settings.Gravity.GravKey.Key, MouseButton = Settings.Gravity.GravKey.MouseButton, ControllerButton = Settings.Gravity.GravKey.ControllerButton, Waiting = Settings.Gravity.GravKey.Waiting, Label = Settings.Gravity.GravKey.Label },
+                    Enabled = Settings.Gravity.Enabled,
+                    Value = Settings.Gravity.Value
+                },
+                Knockback = new()
+                {
+                    KbKey = new() { Key = Settings.Knockback.KbKey.Key, MouseButton = Settings.Knockback.KbKey.MouseButton, ControllerButton = Settings.Knockback.KbKey.ControllerButton, Waiting = Settings.Knockback.KbKey.Waiting, Label = Settings.Knockback.KbKey.Label },
+                    Enabled = Settings.Knockback.Enabled,
+                    Dampen = Settings.Knockback.Dampen
                 }
             };
         }
@@ -323,6 +403,8 @@ namespace NyxExternal.config
             Settings.Visuals.RemoveBorders = c.Visuals.RemoveBorders;
             Settings.Visuals.ChinaHat = c.Visuals.ChinaHat;
             Settings.Visuals.LocalPlayerESP = c.Visuals.LocalPlayerESP;
+            Settings.Visuals.WeaponESP = c.Visuals.WeaponESP;
+            Settings.Visuals.TeamColorESP = c.Visuals.TeamColorESP;
             Settings.Visuals.TracersStart = c.Visuals.TracersStart;
             Settings.Visuals.NameSize = c.Visuals.NameSize;
             Settings.Visuals.DistanceSize = c.Visuals.DistanceSize;
@@ -383,6 +465,44 @@ namespace NyxExternal.config
             Settings.Flight.VFlightBind.Label = c.Flight.VFlightBind.Label;
             Settings.Flight.VFlight = c.Flight.VFlight;
             Settings.Flight.VFlightSpeed = c.Flight.VFlightSpeed;
+
+            Settings.Triggerbot.TriggerKey.Key = c.Triggerbot.TriggerKey.Key;
+            Settings.Triggerbot.TriggerKey.MouseButton = c.Triggerbot.TriggerKey.MouseButton;
+            Settings.Triggerbot.TriggerKey.ControllerButton = c.Triggerbot.TriggerKey.ControllerButton;
+            Settings.Triggerbot.TriggerKey.Label = c.Triggerbot.TriggerKey.Label;
+            Settings.Triggerbot.Enabled = c.Triggerbot.Enabled;
+            Settings.Triggerbot.FovRadius = c.Triggerbot.FovRadius;
+            Settings.Triggerbot.DelayMs = c.Triggerbot.DelayMs;
+            Settings.Triggerbot.Range = c.Triggerbot.Range;
+
+            Settings.Hitbox.HitboxKey.Key = c.Hitbox.HitboxKey.Key;
+            Settings.Hitbox.HitboxKey.MouseButton = c.Hitbox.HitboxKey.MouseButton;
+            Settings.Hitbox.HitboxKey.ControllerButton = c.Hitbox.HitboxKey.ControllerButton;
+            Settings.Hitbox.HitboxKey.Label = c.Hitbox.HitboxKey.Label;
+            Settings.Hitbox.Enabled = c.Hitbox.Enabled;
+            Settings.Hitbox.Multiplier = c.Hitbox.Multiplier;
+            Settings.Hitbox.Range = c.Hitbox.Range;
+
+            Settings.Spinbot.SpinKey.Key = c.Spinbot.SpinKey.Key;
+            Settings.Spinbot.SpinKey.MouseButton = c.Spinbot.SpinKey.MouseButton;
+            Settings.Spinbot.SpinKey.ControllerButton = c.Spinbot.SpinKey.ControllerButton;
+            Settings.Spinbot.SpinKey.Label = c.Spinbot.SpinKey.Label;
+            Settings.Spinbot.Enabled = c.Spinbot.Enabled;
+            Settings.Spinbot.Speed = c.Spinbot.Speed;
+
+            Settings.Gravity.GravKey.Key = c.Gravity.GravKey.Key;
+            Settings.Gravity.GravKey.MouseButton = c.Gravity.GravKey.MouseButton;
+            Settings.Gravity.GravKey.ControllerButton = c.Gravity.GravKey.ControllerButton;
+            Settings.Gravity.GravKey.Label = c.Gravity.GravKey.Label;
+            Settings.Gravity.Enabled = c.Gravity.Enabled;
+            Settings.Gravity.Value = c.Gravity.Value;
+
+            Settings.Knockback.KbKey.Key = c.Knockback.KbKey.Key;
+            Settings.Knockback.KbKey.MouseButton = c.Knockback.KbKey.MouseButton;
+            Settings.Knockback.KbKey.ControllerButton = c.Knockback.KbKey.ControllerButton;
+            Settings.Knockback.KbKey.Label = c.Knockback.KbKey.Label;
+            Settings.Knockback.Enabled = c.Knockback.Enabled;
+            Settings.Knockback.Dampen = c.Knockback.Dampen;
         }
     }
 }

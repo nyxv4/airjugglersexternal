@@ -4,7 +4,12 @@ using NyxExternal.features.games.universal.camera;
 using NyxExternal.features.games.universal.desync;
 using NyxExternal.features.games.universal.flight;
 using NyxExternal.games.universal.aiming;
+using NyxExternal.games.universal.gravity;
+using NyxExternal.games.universal.hitbox;
 using NyxExternal.games.universal.humanoid;
+using NyxExternal.games.universal.knockback;
+using NyxExternal.games.universal.spinbot;
+using NyxExternal.games.universal.triggerbot;
 using NyxExternal.games.universal.visuals;
 using NyxExternal.helpers.roblox.imagehandler;
 using NyxExternal.logging;
@@ -446,7 +451,7 @@ namespace NyxExternal
                     _lookin?.Cancel();
                     _lookin = null;
 
-                    try { player.Start(); playerobjects.Start(); HumanoidModule.Start(); TPHandler.Start(); CameraModule.Start(); visuals.Start(); aiming.Start(); desync.Start(); flight.Start(); silentaiming.Start(); } catch { }
+                    try { player.Start(); playerobjects.Start(); HumanoidModule.Start(); TPHandler.Start(); CameraModule.Start(); visuals.Start(); aiming.Start(); desync.Start(); flight.Start(); silentaiming.Start(); triggerbot.Start(); hitbox.Start(); spinbot.Start(); gravityhack.Start(); knockbackhack.Start(); } catch { }
 
 
                     Dispatcher.Invoke(() =>
@@ -526,7 +531,7 @@ namespace NyxExternal
 
         private void startvibing(object sender, RoutedEventArgs e) { ((Storyboard)Resources["FadeInSequence"]).Begin(); ((Storyboard)Resources["PulseGlow"]).Begin(); settheme(Colors.White); }
 
-        private void bye(object sender, RoutedEventArgs e) { try { HumanoidModule.Stop(); CameraModule.Stop(); visuals.Stop(); TPHandler.Stop(); aiming.Stop(); desync.Stop(); flight.Stop(); silentaiming.Stop(); IMGUI.Program.kill();} catch { } Application.Current.Shutdown(); }
+        private void bye(object sender, RoutedEventArgs e) { try { HumanoidModule.Stop(); CameraModule.Stop(); visuals.Stop(); TPHandler.Stop(); aiming.Stop(); desync.Stop(); flight.Stop(); silentaiming.Stop(); triggerbot.Stop(); hitbox.Stop(); spinbot.Stop(); gravityhack.Stop(); knockbackhack.Stop(); IMGUI.Program.kill();} catch { } Application.Current.Shutdown(); }
 
         protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e) { if (e.ChangedButton == MouseButton.Left) DragMove(); }
 

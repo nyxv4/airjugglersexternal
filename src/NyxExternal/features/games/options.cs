@@ -50,6 +50,8 @@ namespace Options
         public bool RemoveBorders = false;
         public bool ChinaHat = false;
         public bool LocalPlayerESP = false;
+        public bool WeaponESP = true;
+        public bool TeamColorESP = true;
         public int TracersStart = 0;
         public float NameSize = 12f;
         public float DistanceSize = 15f;
@@ -129,6 +131,54 @@ namespace Options
         {
         }
     }
+    public class Triggerbot
+    {
+        public KeyBind TriggerKey = new KeyBind("Triggerbot") { Key = 0x58 };
+        public bool Enabled = true;
+        public float FovRadius = 40f;
+        public int DelayMs = 50;
+        public float Range = 300f;
+
+        public Triggerbot() { }
+    }
+
+    public class Hitbox
+    {
+        public KeyBind HitboxKey = new KeyBind("Hitbox") { Key = 0x43 };
+        public bool Enabled = true;
+        public float Multiplier = 2.5f;
+        public float Range = 300f;
+
+        public Hitbox() { }
+    }
+
+    public class Spinbot
+    {
+        public KeyBind SpinKey = new KeyBind("Spinbot") { Key = 0x56 };
+        public bool Enabled = true;
+        public float Speed = 720f;
+
+        public Spinbot() { }
+    }
+
+    public class GravityHack
+    {
+        public KeyBind GravKey = new KeyBind("Gravity") { Key = 0x47 };
+        public bool Enabled = true;
+        public float Value = 30f;
+
+        public GravityHack() { }
+    }
+
+    public class KnockbackHack
+    {
+        public KeyBind KbKey = new KeyBind("Knockback") { Key = 0x42 };
+        public bool Enabled = true;
+        public float Dampen = 0.2f;
+
+        public KnockbackHack() { }
+    }
+
     public static class Settings
     {
         public static Humanoid Humanoid = new Humanoid();
@@ -139,5 +189,10 @@ namespace Options
         public static Network Network = new Network();
         public static Flight Flight = new Flight();
         public static Silent Silent = new Silent();
+        public static Triggerbot Triggerbot = new Triggerbot();
+        public static Hitbox Hitbox = new Hitbox();
+        public static Spinbot Spinbot = new Spinbot();
+        public static GravityHack Gravity = new GravityHack();
+        public static KnockbackHack Knockback = new KnockbackHack();
     }
 }
