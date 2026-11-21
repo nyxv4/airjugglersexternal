@@ -22,6 +22,7 @@ namespace NyxExternal.config
         public SpinbotConfig Spinbot { get; set; } = new();
         public GravityConfig Gravity { get; set; } = new();
         public KnockbackConfig Knockback { get; set; } = new();
+        public HitfixConfig Hitfix { get; set; } = new();
     }
 
     public class HumanoidConfig
@@ -158,6 +159,15 @@ namespace NyxExternal.config
         public KeyBindConfig KbKey { get; set; } = new("Knockback");
         public bool Enabled { get; set; } = true;
         public float Dampen { get; set; } = 0.2f;
+    }
+
+    public class HitfixConfig
+    {
+        public KeyBindConfig HitFixKey { get; set; } = new("HitFix");
+        public bool Enabled { get; set; } = true;
+        public float FovRadius { get; set; } = 150f;
+        public float Strength { get; set; } = 0.6f;
+        public float Range { get; set; } = 300f;
     }
 
     public class KeyBindConfig
@@ -374,6 +384,14 @@ namespace NyxExternal.config
                     KbKey = new() { Key = Settings.Knockback.KbKey.Key, MouseButton = Settings.Knockback.KbKey.MouseButton, ControllerButton = Settings.Knockback.KbKey.ControllerButton, Waiting = Settings.Knockback.KbKey.Waiting, Label = Settings.Knockback.KbKey.Label },
                     Enabled = Settings.Knockback.Enabled,
                     Dampen = Settings.Knockback.Dampen
+                },
+                Hitfix = new()
+                {
+                    HitFixKey = new() { Key = Settings.Hitfix.HitFixKey.Key, MouseButton = Settings.Hitfix.HitFixKey.MouseButton, ControllerButton = Settings.Hitfix.HitFixKey.ControllerButton, Waiting = Settings.Hitfix.HitFixKey.Waiting, Label = Settings.Hitfix.HitFixKey.Label },
+                    Enabled = Settings.Hitfix.Enabled,
+                    FovRadius = Settings.Hitfix.FovRadius,
+                    Strength = Settings.Hitfix.Strength,
+                    Range = Settings.Hitfix.Range
                 }
             };
         }
@@ -503,6 +521,15 @@ namespace NyxExternal.config
             Settings.Knockback.KbKey.Label = c.Knockback.KbKey.Label;
             Settings.Knockback.Enabled = c.Knockback.Enabled;
             Settings.Knockback.Dampen = c.Knockback.Dampen;
+
+            Settings.Hitfix.HitFixKey.Key = c.Hitfix.HitFixKey.Key;
+            Settings.Hitfix.HitFixKey.MouseButton = c.Hitfix.HitFixKey.MouseButton;
+            Settings.Hitfix.HitFixKey.ControllerButton = c.Hitfix.HitFixKey.ControllerButton;
+            Settings.Hitfix.HitFixKey.Label = c.Hitfix.HitFixKey.Label;
+            Settings.Hitfix.Enabled = c.Hitfix.Enabled;
+            Settings.Hitfix.FovRadius = c.Hitfix.FovRadius;
+            Settings.Hitfix.Strength = c.Hitfix.Strength;
+            Settings.Hitfix.Range = c.Hitfix.Range;
         }
     }
 }

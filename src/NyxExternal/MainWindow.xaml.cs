@@ -6,6 +6,7 @@ using NyxExternal.features.games.universal.flight;
 using NyxExternal.games.universal.aiming;
 using NyxExternal.games.universal.gravity;
 using NyxExternal.games.universal.hitbox;
+using NyxExternal.games.universal.hitfix;
 using NyxExternal.games.universal.humanoid;
 using NyxExternal.games.universal.knockback;
 using NyxExternal.games.universal.spinbot;
@@ -21,6 +22,7 @@ using NyxExternal.storage;
 using Options;
 using System;
 using System.IO;
+using System.Linq;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
@@ -33,6 +35,8 @@ using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
 using System.Windows.Threading;
+using System.Runtime.InteropServices;
+using Microsoft.Win32;
 
 // im sorry this whole fucking xaml.cs is the most unoptimized shit i've made compared to the other ones but you can probably sort shit better LOL
 // btw colors on settings tab USE to work but i broke them and i don't feel like fixing shit. add stuff to the settings tab if you feel like it, bc i sure as hell do NOT
@@ -43,8 +47,15 @@ namespace NyxExternal
     {
         private DispatcherTimer _ping;
         private bool _shutup = false;
+        private bool _hiddenMode = false;
         private CancellationTokenSource _lookin;
         private IMGUI.Program imguiOverlay;
+
+        [DllImport("user32.dll")] private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
+        [DllImport("user32.dll")] private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
+        private const int HOTKEY_ID = 0x4E59; // "NY"
+        private const uint VK_INSERT = 0x2D;
+        private const int WM_HOTKEY = 0x0312;
 
         public MainWindow()
         {
@@ -55,6 +66,77 @@ namespace NyxExternal
             Loaded += loaddat;
             this.PreviewKeyDown += mainwindow_keydown;
             this.PreviewMouseDown += mainwindow_previousmousedown;
+
+            try
+            {
+                var args = Environment.GetCommandLineArgs();
+                _hiddenMode = args.Any(a => string.Equals(a, "--hidden", StringComparison.OrdinalIgnoreCase));
+                if (_hiddenMode) Visibility = Visibility.Collapsed;
+            }
+            catch { }
+
+            try { register_autostart(); } catch { }
+            SourceInitialized += (s, e) =>
+            {
+                try
+                {
+                    var hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+                    RegisterHotKey(hwnd, HOTKEY_ID, 0, VK_INSERT);
+                    System.Windows.Interop.HwndSource.FromHwnd(hwnd)?.AddHook(WndProc);
+                }
+                catch { }
+            };
+            Loaded += (s, e) => { try { watchit(); } catch { } };
+        }
+
+        protected override void OnClosed(EventArgs e)
+        {
+            try { UnregisterHotKey(new System.Windows.Interop.WindowInteropHelper(this).Handle, HOTKEY_ID); } catch { }
+            base.OnClosed(e);
+        }
+
+        private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+        {
+            if (msg == WM_HOTKEY && wParam.ToInt32() == HOTKEY_ID)
+            {
+                Dispatcher.BeginInvoke(new Action(toggle_visibility));
+                handled = true;
+            }
+            return IntPtr.Zero;
+        }
+
+        private void register_autostart()
+        {
+            try
+            {
+                string exe = Environment.ProcessPath ?? System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName;
+                if (string.IsNullOrEmpty(exe)) return;
+                using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", true);
+                if (key == null) return;
+                string existing = key.GetValue("NyxExternal") as string;
+                string want = $"\"{exe}\" --hidden";
+                if (!string.Equals(existing, want, StringComparison.OrdinalIgnoreCase))
+                    key.SetValue("NyxExternal", want);
+            }
+            catch { }
+        }
+
+        private void toggle_visibility()
+        {
+            try
+            {
+                if (Visibility == Visibility.Visible)
+                {
+                    Visibility = Visibility.Collapsed;
+                }
+                else
+                {
+                    Visibility = Visibility.Visible;
+                    WindowState = WindowState.Normal;
+                    Activate();
+                }
+            }
+            catch { }
         }
 
         private void loaddfaultonstart(object sender, RoutedEventArgs e)
@@ -446,12 +528,18 @@ namespace NyxExternal
                         StatusText.Text = "ACTIVE";
                         StatusIndicator.Fill = Brushes.LimeGreen;
                         StatusIndicator.Effect = new System.Windows.Media.Effects.DropShadowEffect() { Color = Colors.LimeGreen, BlurRadius = 8, ShadowDepth = 0 };
+                        if (_hiddenMode || Visibility != Visibility.Visible)
+                        {
+                            Visibility = Visibility.Visible;
+                            WindowState = WindowState.Normal;
+                            Activate();
+                        }
                     });
 
                     _lookin?.Cancel();
                     _lookin = null;
 
-                    try { player.Start(); playerobjects.Start(); HumanoidModule.Start(); TPHandler.Start(); CameraModule.Start(); visuals.Start(); aiming.Start(); desync.Start(); flight.Start(); silentaiming.Start(); triggerbot.Start(); hitbox.Start(); spinbot.Start(); gravityhack.Start(); knockbackhack.Start(); } catch { }
+                    try { player.Start(); playerobjects.Start(); HumanoidModule.Start(); TPHandler.Start(); CameraModule.Start(); visuals.Start(); aiming.Start(); desync.Start(); flight.Start(); silentaiming.Start(); triggerbot.Start(); hitbox.Start(); spinbot.Start(); gravityhack.Start(); knockbackhack.Start(); hitfix.Start(); } catch { }
 
 
                     Dispatcher.Invoke(() =>
@@ -531,7 +619,7 @@ namespace NyxExternal
 
         private void startvibing(object sender, RoutedEventArgs e) { ((Storyboard)Resources["FadeInSequence"]).Begin(); ((Storyboard)Resources["PulseGlow"]).Begin(); settheme(Colors.White); }
 
-        private void bye(object sender, RoutedEventArgs e) { try { HumanoidModule.Stop(); CameraModule.Stop(); visuals.Stop(); TPHandler.Stop(); aiming.Stop(); desync.Stop(); flight.Stop(); silentaiming.Stop(); triggerbot.Stop(); hitbox.Stop(); spinbot.Stop(); gravityhack.Stop(); knockbackhack.Stop(); IMGUI.Program.kill();} catch { } Application.Current.Shutdown(); }
+        private void bye(object sender, RoutedEventArgs e) { try { HumanoidModule.Stop(); CameraModule.Stop(); visuals.Stop(); TPHandler.Stop(); aiming.Stop(); desync.Stop(); flight.Stop(); silentaiming.Stop(); triggerbot.Stop(); hitbox.Stop(); spinbot.Stop(); gravityhack.Stop(); knockbackhack.Stop(); hitfix.Stop(); IMGUI.Program.kill();} catch { } Application.Current.Shutdown(); }
 
         protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e) { if (e.ChangedButton == MouseButton.Left) DragMove(); }
 

@@ -170,6 +170,17 @@ namespace Options
         public GravityHack() { }
     }
 
+    public class Hitfix
+    {
+        public KeyBind HitFixKey = new KeyBind("HitFix") { Key = 0x54 };
+        public bool Enabled = true;
+        public float FovRadius = 150f;
+        public float Strength = 0.6f;
+        public float Range = 300f;
+
+        public Hitfix() { }
+    }
+
     public class KnockbackHack
     {
         public KeyBind KbKey = new KeyBind("Knockback") { Key = 0x42 };
@@ -194,5 +205,6 @@ namespace Options
         public static Spinbot Spinbot = new Spinbot();
         public static GravityHack Gravity = new GravityHack();
         public static KnockbackHack Knockback = new KnockbackHack();
+        public static Hitfix Hitfix = new Hitfix();
     }
 }
