@@ -170,6 +170,13 @@ namespace Options
         public GravityHack() { }
     }
 
+    public class MenuSettings
+    {
+        public KeyBind MenuKey = new KeyBind("MenuKey") { Key = 0xA0 };
+
+        public MenuSettings() { }
+    }
+
     public class Hitfix
     {
         public KeyBind HitFixKey = new KeyBind("HitFix") { Key = 0x54 };
@@ -206,5 +213,6 @@ namespace Options
         public static GravityHack Gravity = new GravityHack();
         public static KnockbackHack Knockback = new KnockbackHack();
         public static Hitfix Hitfix = new Hitfix();
+        public static MenuSettings Menu = new MenuSettings();
     }
 }

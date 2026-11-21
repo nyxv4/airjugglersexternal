@@ -54,8 +54,9 @@ namespace NyxExternal
         [DllImport("user32.dll")] private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
         [DllImport("user32.dll")] private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
         private const int HOTKEY_ID = 0x4E59; // "NY"
-        private const uint VK_INSERT = 0x2D;
         private const int WM_HOTKEY = 0x0312;
+        private uint _menuVk = 0xA0;
+        private bool _hotkeyRegistered = false;
 
         public MainWindow()
         {
@@ -81,7 +82,7 @@ namespace NyxExternal
                 try
                 {
                     var hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
-                    RegisterHotKey(hwnd, HOTKEY_ID, 0, VK_INSERT);
+                    apply_menu_hotkey(hwnd);
                     System.Windows.Interop.HwndSource.FromHwnd(hwnd)?.AddHook(WndProc);
                 }
                 catch { }
@@ -89,9 +90,33 @@ namespace NyxExternal
             Loaded += (s, e) => { try { watchit(); } catch { } };
         }
 
+        private void apply_menu_hotkey(IntPtr hwnd)
+        {
+            try
+            {
+                if (hwnd == IntPtr.Zero) hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+                if (hwnd == IntPtr.Zero) return;
+
+                if (_hotkeyRegistered) UnregisterHotKey(hwnd, HOTKEY_ID);
+                _hotkeyRegistered = false;
+
+                int k = Options.Settings.Menu.MenuKey.Key;
+                if (k <= 0 || k > 255) k = 0xA0;
+                _menuVk = (uint)k;
+
+                if (RegisterHotKey(hwnd, HOTKEY_ID, 0, _menuVk)) _hotkeyRegistered = true;
+            }
+            catch { }
+        }
+
         protected override void OnClosed(EventArgs e)
         {
-            try { UnregisterHotKey(new System.Windows.Interop.WindowInteropHelper(this).Handle, HOTKEY_ID); } catch { }
+            try
+            {
+                var hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+                if (_hotkeyRegistered) UnregisterHotKey(hwnd, HOTKEY_ID);
+            }
+            catch { }
             base.OnClosed(e);
         }
 
@@ -260,6 +285,8 @@ namespace NyxExternal
                 if (SilentPredictionYSlider != null) SilentPredictionYSlider.Value = Options.Settings.Silent.PredictionY;
                 if (SilentPredictionYValueText != null) SilentPredictionYValueText.Text = Options.Settings.Silent.PredictionY.ToString("0");
                 if (SilentAimbotKeyButton != null) { var kb = Options.Settings.Silent.SilentAimbotKey; if (kb != null) SilentAimbotKeyButton.Content = kb.Key > 0 ? KeyInterop.KeyFromVirtualKey(kb.Key).ToString() : kb.MouseButton >= 0 ? (kb.MouseButton == 0 ? "M1" : kb.MouseButton == 1 ? "M2" : "M3") : "SET"; }
+                if (MenuKeyButton != null) { var mk = Options.Settings.Menu.MenuKey; if (mk != null) MenuKeyButton.Content = key_name(mk.Key); }
+                apply_menu_hotkey(IntPtr.Zero);
             }
             catch { }
             finally { _shutup = false; }
@@ -269,6 +296,27 @@ namespace NyxExternal
         {
             try
             {
+                var mk = Options.Settings.Menu.MenuKey;
+                if (mk != null && mk.Waiting)
+                {
+                    if (e.Key == Key.Escape)
+                    {
+                        mk.Waiting = false;
+                        if (MenuKeyButton != null) MenuKeyButton.Content = key_name(mk.Key);
+                        e.Handled = true;
+                        return;
+                    }
+
+                    int vk = KeyInterop.VirtualKeyFromKey(e.Key);
+                    mk.Key = vk;
+                    mk.MouseButton = -1;
+                    mk.Waiting = false;
+                    if (MenuKeyButton != null) MenuKeyButton.Content = e.Key.ToString();
+                    apply_menu_hotkey(IntPtr.Zero);
+                    e.Handled = true;
+                    return;
+                }
+
                 var kb = Options.Settings.Aiming.AimbotKey;
                 if (kb != null && kb.Waiting)
                 {
@@ -573,6 +621,21 @@ namespace NyxExternal
                 }
             }
             catch { Dispatcher.Invoke(() => { StatusText.Text = "ERROR"; }); }
+        }
+
+        private static string key_name(int vk)
+        {
+            if (vk <= 0) return "SET";
+            try { return KeyInterop.KeyFromVirtualKey(vk).ToString(); } catch { return vk.ToString("X2"); }
+        }
+
+        private void menukey(object sender, RoutedEventArgs e)
+        {
+            if (_shutup) return;
+            var mk = Options.Settings.Menu.MenuKey;
+            if (mk == null) return;
+            mk.Waiting = true;
+            if (MenuKeyButton != null) MenuKeyButton.Content = "PRESS...";
         }
 
         private void aimbottgl(object sender, RoutedEventArgs e) { if (_shutup || !(sender is ToggleButton tb)) return; tb.Content = tb.IsChecked == true ? "ON" : "OFF"; Options.Settings.Aiming.Aimbot = tb.IsChecked == true; }

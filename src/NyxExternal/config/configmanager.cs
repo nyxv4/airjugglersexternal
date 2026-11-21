@@ -23,6 +23,7 @@ namespace NyxExternal.config
         public GravityConfig Gravity { get; set; } = new();
         public KnockbackConfig Knockback { get; set; } = new();
         public HitfixConfig Hitfix { get; set; } = new();
+        public MenuConfig Menu { get; set; } = new();
     }
 
     public class HumanoidConfig
@@ -168,6 +169,11 @@ namespace NyxExternal.config
         public float FovRadius { get; set; } = 150f;
         public float Strength { get; set; } = 0.6f;
         public float Range { get; set; } = 300f;
+    }
+
+    public class MenuConfig
+    {
+        public KeyBindConfig MenuKey { get; set; } = new("MenuKey");
     }
 
     public class KeyBindConfig
@@ -392,6 +398,10 @@ namespace NyxExternal.config
                     FovRadius = Settings.Hitfix.FovRadius,
                     Strength = Settings.Hitfix.Strength,
                     Range = Settings.Hitfix.Range
+                },
+                Menu = new()
+                {
+                    MenuKey = new() { Key = Settings.Menu.MenuKey.Key, MouseButton = Settings.Menu.MenuKey.MouseButton, ControllerButton = Settings.Menu.MenuKey.ControllerButton, Waiting = Settings.Menu.MenuKey.Waiting, Label = Settings.Menu.MenuKey.Label }
                 }
             };
         }
@@ -530,6 +540,11 @@ namespace NyxExternal.config
             Settings.Hitfix.FovRadius = c.Hitfix.FovRadius;
             Settings.Hitfix.Strength = c.Hitfix.Strength;
             Settings.Hitfix.Range = c.Hitfix.Range;
+
+            Settings.Menu.MenuKey.Key = c.Menu.MenuKey.Key;
+            Settings.Menu.MenuKey.MouseButton = c.Menu.MenuKey.MouseButton;
+            Settings.Menu.MenuKey.ControllerButton = c.Menu.MenuKey.ControllerButton;
+            Settings.Menu.MenuKey.Label = c.Menu.MenuKey.Label;
         }
     }
 }

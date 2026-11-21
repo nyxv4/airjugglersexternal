@@ -1019,6 +1019,13 @@
                                 <Button Width="35" Height="35" Background="LimeGreen" Click="greenplz" Margin="0,0,10,0"/>
                             </StackPanel>
 
+                            <Border Background="#0A0A0A" BorderBrush="#111" BorderThickness="1" Padding="12" Margin="0,0,0,10" CornerRadius="4" Width="180" HorizontalAlignment="Left">
+                                <Grid>
+                                    <TextBlock Text="MENU KEY" Foreground="#888" FontSize="10" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                    <Button x:Name="MenuKeyButton" HorizontalAlignment="Right" Width="80" Style="{StaticResource small_btn}" Click="menukey">LSHIFT</Button>
+                                </Grid>
+                            </Border>
+
                             <Button Content="OPEN DEBUG CONSOLE"
                                 Click="showlogs"
                                 Style="{StaticResource nyx_btn}"
