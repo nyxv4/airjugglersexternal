@@ -1,0 +1,11 @@
+﻿################################################################################
+# This .gitignore file was automatically created by Microsoft(R) Visual Studio.
+################################################################################
+
+/.vs
+/src/.vs/NyxExternal
+/src/NyxExternal/bin/Debug/net8.0-windows7.0
+/src/NyxExternal/obj
+
+# devin local config
+.devin/
