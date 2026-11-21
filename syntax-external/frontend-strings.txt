@@ -1,0 +1,925 @@
+ Pf"
+ Pf6
+ Pf:
+ Pf>
+ PfB
+ PfB3
+ PfF
+ PfNT
+ Pfb
+ Pfb~G
+ Pff
+ Pfj
+ PfrK"
+ Pfz
+ st/s
+ updated
+"Cascadia Mono", "SF Mono", Consolas, monospace
+"Segoe UI Variable Text", "Segoe UI Variable", -apple-system, "SF Pro Text", system-ui, sans-serif
+#000000
+#0a84ff
+#2ee6c6
+#3d9bff
+#3dc9c9
+#3de0e0
+#4ade4a
+#4da3ff
+#6ee87a
+#7a869a
+#8ef04a
+#8fd3ff
+#9aa8bd
+#a86eff
+#a8f57a
+#b06cff
+#e8f0ff
+#eaf3ff
+#eef4ff
+#ff4d4d
+#ff5ce0
+#ff6ec7
+#ff9a3d
+#ffc93d
+#ffd93d
+#ffe14d
+$D$P$T
+$Pg.0?
+$Pg:
+$PgJ
+$PgR
+$Pgr"T
+$X$\$`$
+')#'
+'0#5!
+'2#'
+'G#5!
+(PhN
+(Phf
+(Phn
+,Pi&a
+./event-pbo-fwDS.js
+.childList
+.trigger.cps
+.trigger.delay
+0 removes it entirely
+0Pj&M0
+0Pj.
+0PjV%2|$
+100 is an instant hard lock
+2#?4
+4Pk>
+4Pkb|
+4Pkr
+7F63723E6B758C375FB9E5913739BF689A85C075F12D9513369EC6780B2AC91B
+<,#5!
+<Pm2(
+<PmFt"
+<PmVm
+<Pmb
+<Pmb|
+<Pmn
+<circle cx="12" cy="12" r="3"/><path d="M19.9 14.6a1.6 1.6 0 0 0 .32 1.77l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.6 1.6 0 0 0-1.77-.32 1.6 1.6 0 0 0-1 1.47V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1.05-1.47 1.6 1.6 0 0 0-1.77.32l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.6 1.6 0 0 0 .32-1.77 1.6 1.6 0 0 0-1.47-1H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.47-1.05 1.6 1.6 0 0 0-.32-1.77l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.6 1.6 0 0 0 1.77.32H9a1.6 1.6 0 0 0 1-1.47V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.47 1.6 1.6 0 0 0 1.77-.32l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.6 1.6 0 0 0-.32 1.77V9a1.6 1.6 0 0 0 1.47 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.47 1z"/>
+<circle cx="12" cy="12" r="8"/><path d="M12 1v5"/><path d="M12 18v5"/><path d="M1 12h5"/><path d="M18 12h5"/><circle cx="12" cy="12" r="1.5"/>
+<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/>
+<path d="M12 2l8 4v6c0 5-3.4 8.7-8 10-4.6-1.3-8-5-8-10V6z"/><path d="M9 12l2 2 4-4"/>
+<path d="M3 20V6"/><path d="M3 12h14a4 4 0 0 1 4 4v4"/><path d="M3 20h18"/><circle cx="8" cy="9" r="2"/>
+<path d="M4 8V4h4"/><path d="M16 4h4v4"/><path d="M20 16v4h-4"/><path d="M8 20H4v-4"/><circle cx="12" cy="12" r="3"/>
+@Pn"
+@Pnn
+Accessories
+Acrylic
+Active
+Active feature list
+Aim key
+Aim speed
+Aimlock
+Alternate
+Alternate flips every half second or so, at random
+Always on
+AnyLabel
+AppearanceBased
+Arm key
+Back to auto
+Backspace
+Bedwars
+Blur
+Boost in air
+Box style
+Box thickness
+C)' 
+Camera
+Camera writes the view directly (first person); Third person moves the pointer onto them
+Caps Lock
+Capture state
+Click delay
+Closest
+Color by team
+Color by type
+Colour names by team
+Config
+ContentBackground
+Corners
+Critical
+Crosshair
+Custom cursor folder
+DOMContentLoaded
+DPor
+DRAG_DROP
+DRAG_ENTER
+DRAG_LEAVE
+DRAG_OVER
+Dark
+Debug
+Default
+Delete
+Demo markers
+Detect range
+Direction
+Disabled
+Distance label
+Down`Z
+Draw range
+Dump result
+Dump tree
+Ea!&
+Ea0)
+Ea2(
+Ea6-
+Ea8E
+Ea9!
+EaN#
+EaV 
+EaV=
+EaX$
+EaX'
+EaY/
+Ea`.
+Eac%
+Eaq*
+Eau,
+Eaw(
+Eaz+
+Enemy color
+Enter
+Expand
+Extra names
+FPS counter
+Feed status
+Filled
+FluentOverlay
+FollowsWindowActiveState
+Font size
+From bottom
+From crosshair
+Full
+FullScreenUI
+H'?#
+HPpb
+HPpf@H^;
+HPpr
+Head
+HeaderView
+Headless
+Health bar
+Held weapon
+Highest health
+Highlight nearest
+Hitbox Expander
+Hitbox margin
+Hold through loss
+Home`J
+HudWindow
+HumanoidRootPart
+Ignore downed
+Ignore teammates
+Inactiveg
+Indeterminate
+Informational
+Input tester
+Insert
+Jitter
+Keep hair
+Kit ESP
+LPqVw>
+LPq^
+LPqfh
+Label type
+Left Alt`J
+Left Ctrl
+Left Mouse
+Left Shift
+Left`L
+Light
+Load config
+Load from file...
+Lock mode
+Lowest health
+MVSD
+Marker color
+Marker style
+Max distance
+MediumLight
+Menu
+Mica
+Middle Mouse`
+Mouse
+Mouse 4
+Mouse 5
+Name tag
+None
+Normal
+Num 
+Num Lock`"
+Off-screen arrow
+Offset table
+Offsets
+On the head
+Only when game focused
+Only with melee out
+Overlay
+Overlay accent
+Overlay opacity
+Overlay, debugging and configuration
+P f.
+P fB
+P fj
+P fv
+P$g2
+P$gz:
+P(h:
+Page Down
+Page Up
+Pause
+Paused
+Pb"^e
+Pb&hL]
+Pb./
+Pb.pia
+Pb2p
+Pb6B
+Pb6k 
+Pb::
+Pb:c
+Pb:g
+Pb>v`
+PbBH
+PbFc
+PbJl
+PbN!:
+PbN1
+PbV5
+PbZ*
+PbZ9
+Pb^w
+Pbb6
+PbjU
+PbrNs
+Pbzk.
+Pb~U
+Pc&;'z
+Pc>H
+PcBA
+PcFN
+PcJL
+PcJz
+PcN 
+PcR_K
+PcVso
+PcZW
+Pc^K
+Pc^W
+Pcb+
+Pcb7
+Pcb`%
+Pcj`l?
+Pcn:'
+PcnS
+PcvW
+Pcz[M
+Pd*?
+Pd*b
+Pd2 
+Pd2>G
+Pd2T
+Pd6y
+Pd>Z,
+Pd>{u
+PdF0
+PdFx
+PdJK/n
+PdN*
+PdVS!
+PdZ*
+PdZJR
+Pdf"
+PdfLe
+PdfY 
+Pdn`
+Pdr#
+Pdv.
+Pd~T
+Pd~w
+Pe&*
+Pe&/S
+Pe*3
+Pe2,5
+Pe6Z(
+Pe:-
+Pe>2
+PeB=r.
+PeBE
+PeBK
+PeBz
+PeF!h
+PeJ1
+PeRJZ
+PeVr
+PefwX
+Pen&@
+Pez|
+Pe~#S
+Pe~/
+Pillar
+Popover
+Privacy
+Re-fetch now
+Reach
+Reader status
+Reset to defaults
+Right
+Right Alt
+Right Ctrl
+Right Mouse
+Right Shift
+Ring
+Rivals
+Save config
+Scroll Lock
+Send clicks to the game
+Settings
+Sheet
+Show all prompts
+Show teammates
+Shrink to
+Sidebar
+Size multiplier
+Space
+Speed
+Speed key
+Spin key
+Spin speed
+Spinbot
+Status
+Sticky target
+Stream proof
+Suspend
+Tabbed
+TabbedDark
+TabbedLight
+Target bone
+Target mode
+Target speed
+Target training dummies
+Team label
+Teammate color
+Text color
+Text outline color
+Text outline width
+Third person
+Throttle
+Titlebar
+Toggle mode
+Tooltip
+Torso
+Tracers
+Triggerbot
+UVo P
+UltraDark
+UnderPageBackground
+UnderWindowBackground
+UpperTorso
+Use pasted offsets
+WEBVIEW_CREATED
+WINDOW_BLUR
+WINDOW_CLOSE_REQUESTED
+WINDOW_CREATED
+WINDOW_DESTROYED
+WINDOW_FOCUS
+WINDOW_MOVED
+WINDOW_RESIZED
+WINDOW_RESUMED
+WINDOW_SCALE_FACTOR_CHANGED
+WINDOW_SUSPENDED
+WINDOW_THEME_CHANGED
+Wall check
+Watermark
+Wear the game cursor
+Window opacity
+WindowBackground
+XH`^
+Y $L$
+Your own offsets
+[i7U
+[k:<
+^) fL
+__TAURI_INTERNALS__
+__TAURI_TO_IPC_KEY__
+__syntaxFeedBoxes
+__syntaxRender
+_handleTauriEvent
+_keyhttp://tauri.localhost/assets/event-pbo-fwDS.js 
+_keyhttp://tauri.localhost/assets/main-D2lvMo3u.js 
+_keyhttp://tauri.localhost/assets/main-UJrFg1hx.js 
+_keyhttp://tauri.localhost/assets/menu-BRK6dmIk.js 
+_keyhttp://tauri.localhost/assets/overlay-BrjudNV0.js 
+_keyhttp://tauri.localhost/assets/overlay-tZaWReWC.js 
+accent
+acorn
+acrylic
+action
+active
+activityName
+always on
+appearanceBased
+aqua
+bedwars
+bees amber, metal blue, orbs green, stars white
+black
+blank uses the built-in Roblox cursor; or point at your own .png
+blue
+brighten the closest item
+bundled
+buried
+button
+bw.accent
+bw.aim
+bw.aim.bone
+bw.aim.dead
+bw.aim.fov
+bw.aim.grace
+bw.aim.key
+bw.aim.mode
+bw.aim.range
+bw.aim.speed
+bw.aim.sticky
+bw.aim.swordonly
+bw.aim.target
+bw.aim.team
+bw.aim.toggle
+bw.aim.visible
+bw.debug.allprompts
+bw.debug.feed
+bw.debug.input
+bw.debug.kitdump
+bw.debug.kitdump.out
+bw.demo
+bw.esp
+bw.esp.box
+bw.esp.byteam
+bw.esp.color
+bw.esp.dist
+bw.esp.fontsize
+bw.esp.health
+bw.esp.name
+bw.esp.nameteam
+bw.esp.range
+bw.esp.status
+bw.esp.strokecolor
+bw.esp.strokewidth
+bw.esp.teamcolor
+bw.esp.teammates
+bw.esp.teamname
+bw.esp.textcolor
+bw.esp.thickness
+bw.esp.tracer
+bw.esp.weapon
+bw.fpscounter
+bw.headless
+bw.headless.acc
+bw.headless.hair
+bw.headless.size
+bw.headless.status
+bw.hud
+bw.hud.opacity
+bw.keylist
+bw.kitesp
+bw.kitesp.arrow
+bw.kitesp.color
+bw.kitesp.dist
+bw.kitesp.kindcolor
+bw.kitesp.kindlabel
+bw.kitesp.marker
+bw.kitesp.names
+bw.kitesp.nearest
+bw.kitesp.range
+bw.offsets.apply
+bw.offsets.auto
+bw.offsets.file
+bw.offsets.paste
+bw.offsets.refresh
+bw.offsets.status
+bw.overlay.focusonly
+bw.speed
+bw.speed.air
+bw.speed.key
+bw.speed.status
+bw.speed.target
+bw.spin
+bw.spin.dir
+bw.spin.key
+bw.spin.speed
+bw.spin.status
+bw.streamproof
+bw.streamproof.cursor
+bw.streamproof.cursorpath
+bw.streamproof.status
+bw.trigger
+bw.trigger.dead
+bw.trigger.delay
+bw.trigger.direct
+bw.trigger.fov
+bw.trigger.jitter
+bw.trigger.key
+bw.trigger.range
+bw.trigger.status
+bw.trigger.swordonly
+bw.trigger.team
+bw.trigger.visible
+bw.ui.opacity
+bw.watermark
+cBYvR
+cache
+cards
+center
+cfg.load
+cfg.reset
+cfg.save
+changed
+childList
+cj`l?
+className
+clearEffects
+click to bind, right-click for no key at all (always on)
+comet
+config_load
+config_load failed:
+contentBackground
+controls
+critstar
+cross
+cyan
+danger
+dark
+data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAA4AAAAWCAYAAADwza0nAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAACxIAAAsSAdLdfvwAAAGHaVRYdFhNTDpjb20uYWRvYmUueG1wAAAAAAA8P3hwYWNrZXQgYmVnaW49J++7vycgaWQ9J1c1TTBNcENlaGlIenJlU3pOVGN6a2M5ZCc/Pg0KPHg6eG1wbWV0YSB4bWxuczp4PSJhZG9iZTpuczptZXRhLyI+PHJkZjpSREYgeG1sbnM6cmRmPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1zeW50YXgtbnMjIj48cmRmOkRlc2NyaXB0aW9uIHJkZjphYm91dD0idXVpZDpmYWY1YmRkNS1iYTNkLTExZGEtYWQzMS1kMzNkNzUxODJmMWIiIHhtbG5zOnRpZmY9Imh0dHA6Ly9ucy5hZG9iZS5jb20vdGlmZi8xLjAvIj48dGlmZjpPcmllbnRhdGlvbj4xPC90aWZmOk9yaWVudGF0aW9uPjwvcmRmOkRlc2NyaXB0aW9uPjwvcmRmOlJERj48L3g6eG1wbWV0YT4NCjw/eHBhY2tldCBlbmQ9J3cnPz4slJgLAAACEklEQVQ4T5XRT0tUURgG8Of8uV7v0HC8b7sMwRatJ5pF4MIWrQSFXLUZrHVEEPMB+gZtlfbOMhLmC4QDgZMrF0EwMiCkiJOjkt07956nRRkzev3Ts3vh/HjOew4mJiaWROSHiGyLyBJuGhHZ7na77Ha7rFQqFJHnANT5cxciIjzLEH5xLR6GBfjynIcFuLi5CHIUF+98GeQQds5dbL4K8qrm6yAv2/kmkEXNN4UcxU//C5Jks9lkHMcflYjw4OBg6LlG02q1RuZms4mVlZVPhbDf78M5BwCYnZ3F1tYWAIAklFLw3jf0iADQaDRQq9X+zXNzc8AftAngC8kP3vt3Izuurq5SRCgiXF9fJ0keHh5yenr6WESeOOcelMvl+1EU3TFRFL11zqHdbqNer4PkCYDe0dHRrcXFRYyPj2Nvb29sY2PjNMuyz1rrtFQqpSqO4x2l1OTf65x4718DqBhjXnU6HTjn0Gq1MD8/f2yMeei9P82y7KfWWtdItkluknyptf6qtW6SPFleXgYAzMzMYGpqquy9v52m6a8wDFPlnLuXZVnJWjsGQA0GA1hrtbX2jXPu2draGvr9PhYWFpDnedUY863X6yUqiqK7QRCEJG0QBDpNU5A01tpHxpj3Z19Acsda+3h/f/87gNREURTkee7DMBwASJMkyYIg8MaYXZK7ACaVUh0A9SRJOnEcZ9VqNf8N0cotIMVLuewAAAAASUVORK5CYII=
+destroy
+detector
+diamondtreeorb
+disabled
+do not fire at someone behind cover
+do not swing at someone behind a block
+down the left side of the box
+e"$2
+e.g. bee, metal, hive
+elder
+emeraldtreeorb
+emit
+emitTo
+enable
+esp-frame
+essence
+fetch the published dump again and stop using yours
+fluentOverlay
+followsWindowActiveState
+fromBytes
+fromPath
+fullScreenUI
+gate-user
+get rid
+getAll
+getByLabel
+getContext
+getCurrent
+getFocusedWindow
+getItem
+gold
+goldtreeorb
+gray
+green
+grey
+hPx"
+handler
+headerView
+height
+hide
+hide SYNTAX from OBS, Medal and screen capture
+hide the overlay when you alt-tab away
+hint
+hive
+honey
+hornet
+how solid the ESP and markers are drawn over the game
+http://tauri.localhost/
+http://tauri.localhost/assets/event-pbo-fwDS.js
+http://tauri.localhost/assets/main-UJrFg1hx.js
+http://tauri.localhost/assets/overlay-tZaWReWC.js
+hudWindow
+hyqL
+h}`@
+icon
+ignores the cache and pulls the dump for the installed client
+inactive
+indeterminate
+innerPosition
+innerSize
+invoke
+isAlwaysOnTop
+isClosable
+isDecorated
+isEnabled
+isFocused
+isFullscreen
+isMaximizable
+isMaximized
+isMinimizable
+isMinimized
+isPreventDefault
+isResizable
+isVisible
+keep the person you locked instead of re-picking every tick
+keybind
+keydown
+kind
+kitdump
+label
+leave blank for the built-in cursor
+left alt`H
+left mouse
+left shift
+let go the moment their health hits zero
+light
+lime
+line drawn from this point to each player
+link[rel="modulepreload"]
+listen
+login
+magenta
+manual
+mediumLight
+menu
+metal
+mica
+middle mouse`
+modulepreload
+mouse 4
+mouse 5
+ms to keep a target that briefly goes unreadable
+ms to keep a target that briefly goes unreadable - streaming and the wall grid both blink
+mv.aim
+mv.aim.bone
+mv.aim.dead
+mv.aim.fov
+mv.aim.grace
+mv.aim.key
+mv.aim.mode
+mv.aim.range
+mv.aim.speed
+mv.aim.sticky
+mv.aim.target
+mv.aim.team
+mv.aim.toggle
+mv.aim.visible
+mv.esp
+mv.esp.status
+mv.hitbox
+mv.hitbox.mult
+mv.hitbox.part
+mv.hitbox.range
+mv.hitbox.status
+mv.hitbox.team
+mv.trigger
+mv.trigger.dead
+mv.trigger.delay
+mv.trigger.direct
+mv.trigger.fov
+mv.trigger.jitter
+mv.trigger.key
+mv.trigger.range
+mv.trigger.status
+mv.trigger.team
+mv.trigger.visible
+mvsd
+names, distance, team and weapon
+nightmaretreeorb
+nn$T
+observe
+off keeps it to the ground, which is far less obvious
+off means it also fires while you are placing blocks
+off means names use the text colour like the other labels
+off targets everyone, which is what a free-for-all round wants
+offsets-apply
+offsets-auto
+offsets-file
+offsets-refresh
+offsets_status
+onCloseRequested
+onDragDropEvent
+onFocusChanged
+onMoved
+onResized
+onScaleChanged
+onThemeChanged
+once
+opacity
+orange
+outerPosition
+outerSize
+pPz^
+parts currently expanded
+paste a dump's offsets.json here when the site is down or has not posted your version yet
+paused
+pick an offsets.json you already downloaded
+pink
+placeholder
+platinumtreeorb
+players currently drawn
+plugin:event|listen
+point to nearest when out of view
+popover
+press during the ban/pick phase - writes kitdump.txt
+press the key to lock on and press again to release, instead of holding it down
+press your aim button and watch this
+preventDefault
+purple
+readout
+readout is-bad
+readout is-ok
+readout-bw.offsets.status
+relList
+requestUserAttention
+reset
+reticle
+rgba
+rgba(0,0,0,0.92)
+right mouse
+rivals
+rows`
+rv.esp
+rv.esp.status
+rv.trigger
+rv.trigger.dead
+rv.trigger.delay
+rv.trigger.direct
+rv.trigger.fov
+rv.trigger.jitter
+rv.trigger.key
+rv.trigger.npcs
+rv.trigger.range
+rv.trigger.status
+rv.trigger.team
+rv.trigger.visible
+sapling
+save
+saved against the running Roblox build, so it survives a restart
+scaleFactor
+sceneIdentifier
+scrap
+selection
+setAlwaysOnBottom
+setAlwaysOnTop
+setBackgroundColor
+setBadgeCount
+setBadgeLabel
+setClosable
+setContentProtected
+setCursorGrab
+setCursorIcon
+setCursorPosition
+setCursorVisible
+setDecorations
+setEffects
+setEnabled
+setFocus
+setFocusable
+setFullscreen
+setIcon
+setIgnoreCursorEvents
+setItem
+setMaxSize
+setMaximizable
+setMinSize
+setMinimizable
+setOverlayIcon
+setPosition
+setProgressBar
+setResizable
+setShadow
+setSimpleFullscreen
+setSize
+setSizeConstraints
+setSkipTaskbar
+setTheme
+setTitle
+setTitleBarStyle
+setTransform
+setVisibleOnAllWorkspaces
+settingsi
+shared with the other tabs
+sheet
+shield
+show
+show bee / metal next to the distance
+show whether real game data is arriving
+sidebar
+skip targets behind blocks
+slider
+spirit
+spotted by the HairAttachment in the accessory's rig, so it holds even when the item is renamed
+star
+startDragging
+startResizeDragging
+stellar
+step`2
+stop swinging the moment their health hits zero
+studs to each item
+studs to each player
+subtree
+supports
+suspend
+swords and kit melee - chainsaw, scythe, hammer, gauntlet, dagger
+syntax.markers
+syntax.state
+syntax.ui.open
+tP{v
+tab.bedwars
+tab.e
+tab.mvsd
+tab.rivals
+tabbed
+tabbedDark
+tabbedLight
+tauri://blur
+tauri://close-requested
+tauri://created
+tauri://destroyed
+tauri://drag-drop
+tauri://drag-enter
+tauri://drag-leave
+tauri://drag-over
+tauri://error
+tauri://focus
+tauri://move
+tauri://resize
+tauri://resumed
+tauri://scale-change
+tauri://suspended
+tauri://theme-changed
+tauri://webview-created
+tauri://window-created
+teal
+team name next to the distance
+textG
+textarea
+the border drawn around every label
+the range dummies are not players, so they need asking for by name
+theme
+throttle
+titlebar
+toLogical
+toPhysical
+toggle
+toggleMaximize
+tooltip
+transformCallback
+treeorb
+ultraDark
+underPageBackground
+underWindowBackground
+unmaximize
+unminimize
+unset
+use each player's own team colour instead of enemy/teammate
+user
+variant
+version
+version-E
+violet
+vitalitystar
+wasp
+what is under the crosshair and how many swings it has sent
+what the game reader is actually returning
+what the trigger loop is doing right now
+what they have out, under the name
+which Roblox build the memory layout came from
+which part to grow
+while stream proof is on, use Roblox's own cursor over SYNTAX - a normal arrow drifting over nothing is the tell
+white
+who to pick when several are in the cone
+width
+windowBackground
+windows currently hidden from capture
+wisp
+yellow
+yours
+zRg^B1
+{ "FakeDataModel": { "Pointer": 6408720, ... } }
+|P}^zw
