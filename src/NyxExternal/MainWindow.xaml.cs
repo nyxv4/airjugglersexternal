@@ -595,6 +595,16 @@ namespace NyxExternal
 
                     try { player.Start(); playerobjects.Start(); HumanoidModule.Start(); TPHandler.Start(); CameraModule.Start(); visuals.Start(); aiming.Start(); desync.Start(); flight.Start(); silentaiming.Start(); triggerbot.Start(); hitbox.Start(); spinbot.Start(); gravityhack.Start(); knockbackhack.Start(); hitfix.Start(); } catch { }
 
+                    var refresher = new Thread(() =>
+                    {
+                        while (true)
+                        {
+                            try { Storage.RefreshInstances(); } catch { }
+                            Thread.Sleep(1500);
+                        }
+                    }) { IsBackground = true };
+                    refresher.Start();
+
 
                     Dispatcher.Invoke(() =>
                     {

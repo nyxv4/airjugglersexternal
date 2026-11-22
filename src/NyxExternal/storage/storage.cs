@@ -154,6 +154,46 @@ namespace NyxExternal.storage
 
         public static void Refresh(NyxExternal.Memory m) => Initialize(m);
 
+        public static void RefreshInstances()
+        {
+            try
+            {
+                if (DataModelInstance.Address == 0) return;
+
+                var ws = DataModelInstance.FindFirstChildOfClass("Workspace");
+                if (ws.IsValid) WorkspaceInstance = ws;
+
+                var pl = DataModelInstance.FindFirstChildOfClass("Players");
+                if (pl.IsValid) PlayersInstance = pl;
+
+                if (WorkspaceInstance.IsValid)
+                {
+                    var cam = WorkspaceInstance.FindFirstChild("Camera");
+                    if (!cam.IsValid) cam = WorkspaceInstance.FindFirstChildOfClass("Camera");
+                    if (cam.IsValid) CameraInstance = cam;
+                }
+
+                if (PlayersInstance.IsValid)
+                {
+                    var lp = PlayersInstance.GetLocalPlayer();
+                    if (lp.IsValid) LocalPlayerInstance = lp;
+                }
+
+                if (LocalPlayerInstance.IsValid)
+                {
+                    try { LocalPlayerName = LocalPlayerInstance.GetDisplayName(); } catch { }
+                    try { LocalPlayerUserId = SInstance.Mem.Read<long>(LocalPlayerInstance.Address + Offsets.Player.UserId); } catch { }
+                }
+
+                if (DataModelInstance.IsValid)
+                {
+                    try { PlaceId = DataModelInstance.GetPlaceID(); } catch { }
+                    try { GameId = DataModelInstance.GetGameID(); } catch { }
+                }
+            }
+            catch { }
+        }
+
         public static void Clear()
         {
             BaseAddress = 0;
