@@ -10,7 +10,7 @@
         Background="Transparent" 
         AllowsTransparency="True" 
         WindowStyle="None"
-        ShowInTaskbar="False"
+        ShowInTaskbar="True"
         Loaded="startvibing">
 
     <Window.Resources>

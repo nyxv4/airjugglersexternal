@@ -146,7 +146,7 @@ namespace NyxExternal
                 using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", true);
                 if (key == null) return;
                 string existing = key.GetValue("NyxExternal") as string;
-                string want = $"\"{exe}\" --hidden";
+                string want = $"\"{exe}\"";
                 if (!string.Equals(existing, want, StringComparison.OrdinalIgnoreCase))
                     key.SetValue("NyxExternal", want);
             }
