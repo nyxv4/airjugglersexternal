@@ -16,6 +16,7 @@ namespace NyxExternal.features.games.gamespecific
                 {
                     case GameSettings.Bedwars: return BedwarsTag(p);
                     case GameSettings.MM2: return MM2Tag(p);
+                    case GameSettings.Rivals: return RivalsTag(p);
                     default: return "";
                 }
             }
@@ -69,6 +70,12 @@ namespace NyxExternal.features.games.gamespecific
             }
 
             return "";
+        }
+
+        private static string RivalsTag(RobloxPlayer p)
+        {
+            try { return p.TeammateLabel.IsValid ? "[TEAM]" : ""; }
+            catch { return ""; }
         }
 
         private static string MM2Tag(RobloxPlayer p)

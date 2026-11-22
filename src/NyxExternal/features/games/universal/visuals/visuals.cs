@@ -163,7 +163,7 @@ namespace NyxExternal.games.universal.visuals
                     try { tag = gamespecific.GetTag(p); } catch { }
                     if (!string.IsNullOrEmpty(tag))
                     {
-                        Color tagCol = tag.Contains("MURDERER") ? Colors.Red : tag.Contains("SHERIFF") ? Colors.Yellow : teamCol;
+                        Color tagCol = tag.Contains("MURDERER") ? Colors.Red : tag.Contains("SHERIFF") ? Colors.Yellow : tag.Contains("TEAM") ? Colors.LimeGreen : teamCol;
                         next.texts.Add(new Text { t = tag, p = new Point(b.Left + b.Width / 2, b.Top - 15 - Settings.Visuals.NameSize - 4), c = tagCol, s = Settings.Visuals.NameSize * 0.85, ctr = true });
                     }
                     if (Settings.Visuals.Name) next.texts.Add(new Text { t = p.Name, p = new Point(b.Left + b.Width / 2, b.Top - 15), c = Settings.Visuals.TeamColorESP ? teamCol : Colors.White, s = Settings.Visuals.NameSize, ctr = true });

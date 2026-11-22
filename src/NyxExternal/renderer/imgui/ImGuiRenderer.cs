@@ -34,6 +34,7 @@ namespace IMGUI
         [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
         [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr hWnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
+        [DllImport("user32.dll")] private static extern bool SetWindowDisplayAffinity(IntPtr hWnd, uint dwAffinity);
         [DllImport("user32.dll")] private static extern bool PostMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
         private const uint WM_CLOSE = 0x0010;
 
@@ -271,11 +272,15 @@ namespace IMGUI
                     new Thread(() =>
                     {
                         IntPtr win = IntPtr.Zero;
+                        bool affinitySet = false;
                         while (running)
                         {
                             if (win == IntPtr.Zero) win = FindWindow("Overlay", null);
                             if (win != IntPtr.Zero)
+                            {
                                 SetWindowPos(win, new IntPtr(-1), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0040);
+                                if (!affinitySet) { try { SetWindowDisplayAffinity(win, 0x11); affinitySet = true; } catch { } }
+                            }
 
                             Thread.Sleep(200);
                         }

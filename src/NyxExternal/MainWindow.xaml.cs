@@ -55,6 +55,7 @@ namespace NyxExternal
         [DllImport("user32.dll")] private static extern short GetAsyncKeyState(int vKey);
         [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
         [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+        [DllImport("user32.dll")] private static extern bool SetWindowDisplayAffinity(IntPtr hWnd, uint dwAffinity);
         private volatile uint _menuVk = 0xA0;
         private volatile bool _menuPollStop = false;
 
@@ -80,7 +81,11 @@ namespace NyxExternal
             apply_menu_hotkey();
             var poller = new Thread(menu_key_poller) { IsBackground = true };
             poller.Start();
-            Loaded += (s, e) => { try { watchit(); } catch { } };
+            Loaded += (s, e) =>
+            {
+                try { watchit(); } catch { }
+                try { SetWindowDisplayAffinity(new System.Windows.Interop.WindowInteropHelper(this).Handle, 0x11); } catch { }
+            };
         }
 
         private bool roblox_or_own_foreground()

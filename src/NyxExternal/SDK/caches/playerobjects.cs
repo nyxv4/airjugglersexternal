@@ -114,7 +114,7 @@ namespace NyxExternal.SDK.caches
                         info.Head = c.FindFirstChild("Head");
                         info.HumanoidRootPart = c.FindFirstChild("HumanoidRootPart");
 
-                        if (currentGame == GameType.rivals && info.HumanoidRootPart.IsValid)
+                        if ((currentGame == GameType.rivals || Options.Settings.Game.Mode == Options.GameSettings.Rivals) && info.HumanoidRootPart.IsValid)
                         {
                             info.TeammateLabel = info.HumanoidRootPart.FindFirstChild("TeammateLabel");
                         }
