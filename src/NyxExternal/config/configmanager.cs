@@ -24,6 +24,7 @@ namespace NyxExternal.config
         public KnockbackConfig Knockback { get; set; } = new();
         public HitfixConfig Hitfix { get; set; } = new();
         public MenuConfig Menu { get; set; } = new();
+        public GameConfig Game { get; set; } = new();
     }
 
     public class HumanoidConfig
@@ -177,6 +178,11 @@ namespace NyxExternal.config
     public class MenuConfig
     {
         public KeyBindConfig MenuKey { get; set; } = new("MenuKey");
+    }
+
+    public class GameConfig
+    {
+        public int Mode { get; set; }
     }
 
     public class KeyBindConfig
@@ -408,7 +414,8 @@ namespace NyxExternal.config
                 Menu = new()
                 {
                     MenuKey = new() { Key = Settings.Menu.MenuKey.Key, MouseButton = Settings.Menu.MenuKey.MouseButton, ControllerButton = Settings.Menu.MenuKey.ControllerButton, Waiting = Settings.Menu.MenuKey.Waiting, Label = Settings.Menu.MenuKey.Label }
-                }
+                },
+                Game = new() { Mode = Settings.Game.Mode }
             };
         }
 
@@ -554,6 +561,8 @@ namespace NyxExternal.config
             Settings.Menu.MenuKey.MouseButton = c.Menu.MenuKey.MouseButton;
             Settings.Menu.MenuKey.ControllerButton = c.Menu.MenuKey.ControllerButton;
             Settings.Menu.MenuKey.Label = c.Menu.MenuKey.Label;
+
+            Settings.Game.Mode = c.Game.Mode;
         }
     }
 }

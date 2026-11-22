@@ -37,8 +37,33 @@ namespace IMGUI
         [DllImport("user32.dll")] private static extern bool PostMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
         private const uint WM_CLOSE = 0x0010;
 
+        private static bool _fgOk = false;
+        private static DateTime _fgCheck = DateTime.MinValue;
+
+        private static bool overlay_target()
+        {
+            if ((DateTime.UtcNow - _fgCheck).TotalMilliseconds < 500) return _fgOk;
+            _fgCheck = DateTime.UtcNow;
+            _fgOk = is_rbx() || is_own();
+            return _fgOk;
+        }
+
+        private static bool is_own()
+        {
+            try
+            {
+                IntPtr h = GetForegroundWindow();
+                if (h == IntPtr.Zero) return false;
+                GetWindowThreadProcessId(h, out uint pid);
+                return pid != 0 && Process.GetProcessById((int)pid).ProcessName.StartsWith("NyxExternal");
+            }
+            catch { return false; }
+        }
+
         protected override void Render()
         {
+            if (!overlay_target()) return;
+
             var v = visuals.GetSceneSnapshot();
             if (v != null)
             {

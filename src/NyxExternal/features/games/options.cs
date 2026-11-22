@@ -180,6 +180,18 @@ namespace Options
         public MenuSettings() { }
     }
 
+    public class GameSettings
+    {
+        public int Mode = 0;
+
+        public const int Universal = 0;
+        public const int Bedwars = 1;
+        public const int MM2 = 2;
+        public const int Rivals = 3;
+
+        public GameSettings() { }
+    }
+
     public class Hitfix
     {
         public KeyBind HitFixKey = new KeyBind("HitFix") { Key = 0x54 };
@@ -217,5 +229,6 @@ namespace Options
         public static KnockbackHack Knockback = new KnockbackHack();
         public static Hitfix Hitfix = new Hitfix();
         public static MenuSettings Menu = new MenuSettings();
+        public static GameSettings Game = new GameSettings();
     }
 }

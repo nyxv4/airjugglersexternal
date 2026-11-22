@@ -120,6 +120,12 @@ namespace NyxExternal
             base.OnClosing(e);
         }
 
+        private void gamemodechanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_shutup || GameModeCombo == null || GameModeCombo.SelectedIndex < 0) return;
+            Options.Settings.Game.Mode = GameModeCombo.SelectedIndex;
+        }
+
         private void hidewindow(object sender, RoutedEventArgs e)
         {
             Visibility = Visibility.Collapsed;
@@ -293,6 +299,7 @@ namespace NyxExternal
                 if (ShakeAmtSlider != null) ShakeAmtSlider.Value = Options.Settings.Aiming.ShakeAmount;
                 if (ShakeDistText != null) ShakeDistText.Text = Options.Settings.Aiming.ShakeDistance.ToString("0");
                 if (ShakeAmtText != null) ShakeAmtText.Text = Options.Settings.Aiming.ShakeAmount.ToString("0");
+                if (GameModeCombo != null && Options.Settings.Game.Mode >= 0 && Options.Settings.Game.Mode <= 3) GameModeCombo.SelectedIndex = Options.Settings.Game.Mode;
             }
             catch { }
             finally { _shutup = false; }

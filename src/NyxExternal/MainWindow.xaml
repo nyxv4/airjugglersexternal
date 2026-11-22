@@ -317,6 +317,22 @@
                                        " FontSize="26" FontWeight="Black" Foreground="White"/>
                             <TextBlock Text="C#" FontSize="26" FontWeight="Black" Foreground="{DynamicResource AccentBrush}" Margin="5,0,0,0"/>
                         </StackPanel>
+
+                        <ComboBox x:Name="GameModeCombo"
+                                  Margin="0,10,0,0"
+                                  Height="26"
+                                  Padding="8,0"
+                                  Background="#0A0A0A"
+                                  BorderBrush="#111"
+                                  BorderThickness="1"
+                                  Foreground="White"
+                                  FontSize="10"
+                                  SelectionChanged="gamemodechanged">
+                            <ComboBoxItem Content="UNIVERSAL" IsSelected="True"/>
+                            <ComboBoxItem Content="BEDWARS"/>
+                            <ComboBoxItem Content="MURDER MYSTERY 2"/>
+                            <ComboBoxItem Content="RIVALS"/>
+                        </ComboBox>
                     </StackPanel>
 
                     <StackPanel Grid.Row="1">

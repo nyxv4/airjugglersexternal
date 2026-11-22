@@ -15,6 +15,7 @@ using System.Windows;
 using System.Windows.Media;
 using SDKInstance = NyxExternal.SDK.Instance;
 using NyxExternal.features.games.universal.checks.teamcheck;
+using NyxExternal.features.games.gamespecific;
 
 namespace NyxExternal.games.universal.visuals
 {
@@ -158,6 +159,13 @@ namespace NyxExternal.games.universal.visuals
                     }
 
                     Color teamCol = team_color(p);
+                    string tag = "";
+                    try { tag = gamespecific.GetTag(p); } catch { }
+                    if (!string.IsNullOrEmpty(tag))
+                    {
+                        Color tagCol = tag.Contains("MURDERER") ? Colors.Red : tag.Contains("SHERIFF") ? Colors.Yellow : teamCol;
+                        next.texts.Add(new Text { t = tag, p = new Point(b.Left + b.Width / 2, b.Top - 15 - Settings.Visuals.NameSize - 4), c = tagCol, s = Settings.Visuals.NameSize * 0.85, ctr = true });
+                    }
                     if (Settings.Visuals.Name) next.texts.Add(new Text { t = p.Name, p = new Point(b.Left + b.Width / 2, b.Top - 15), c = Settings.Visuals.TeamColorESP ? teamCol : Colors.White, s = Settings.Visuals.NameSize, ctr = true });
                     if (Settings.Visuals.Distance) next.texts.Add(new Text { t = $"{(int)dist}m", p = new Point(b.Left + b.Width / 2, b.Bottom + 2), c = Settings.Visuals.TeamColorESP ? teamCol : Colors.White, s = Settings.Visuals.DistanceSize, ctr = true });
 
