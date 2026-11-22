@@ -25,6 +25,7 @@ namespace NyxExternal.config
         public HitfixConfig Hitfix { get; set; } = new();
         public MenuConfig Menu { get; set; } = new();
         public GameConfig Game { get; set; } = new();
+        public AimAssistConfig AimAssist { get; set; } = new();
     }
 
     public class HumanoidConfig
@@ -183,6 +184,16 @@ namespace NyxExternal.config
     public class GameConfig
     {
         public int Mode { get; set; }
+    }
+
+    public class AimAssistConfig
+    {
+        public KeyBindConfig AssistKey { get; set; } = new("AimAssist");
+        public bool Enabled { get; set; } = true;
+        public float FovRadius { get; set; } = 60f;
+        public float Speed { get; set; } = 0.12f;
+        public float Range { get; set; } = 300f;
+        public bool OnlyWhenFiring { get; set; }
     }
 
     public class KeyBindConfig
@@ -415,7 +426,16 @@ namespace NyxExternal.config
                 {
                     MenuKey = new() { Key = Settings.Menu.MenuKey.Key, MouseButton = Settings.Menu.MenuKey.MouseButton, ControllerButton = Settings.Menu.MenuKey.ControllerButton, Waiting = Settings.Menu.MenuKey.Waiting, Label = Settings.Menu.MenuKey.Label }
                 },
-                Game = new() { Mode = Settings.Game.Mode }
+                Game = new() { Mode = Settings.Game.Mode },
+                AimAssist = new()
+                {
+                    AssistKey = new() { Key = Settings.AimAssist.AssistKey.Key, MouseButton = Settings.AimAssist.AssistKey.MouseButton, ControllerButton = Settings.AimAssist.AssistKey.ControllerButton, Waiting = Settings.AimAssist.AssistKey.Waiting, Label = Settings.AimAssist.AssistKey.Label },
+                    Enabled = Settings.AimAssist.Enabled,
+                    FovRadius = Settings.AimAssist.FovRadius,
+                    Speed = Settings.AimAssist.Speed,
+                    Range = Settings.AimAssist.Range,
+                    OnlyWhenFiring = Settings.AimAssist.OnlyWhenFiring
+                }
             };
         }
 
@@ -563,6 +583,16 @@ namespace NyxExternal.config
             Settings.Menu.MenuKey.Label = c.Menu.MenuKey.Label;
 
             Settings.Game.Mode = c.Game.Mode;
+
+            Settings.AimAssist.AssistKey.Key = c.AimAssist.AssistKey.Key;
+            Settings.AimAssist.AssistKey.MouseButton = c.AimAssist.AssistKey.MouseButton;
+            Settings.AimAssist.AssistKey.ControllerButton = c.AimAssist.AssistKey.ControllerButton;
+            Settings.AimAssist.AssistKey.Label = c.AimAssist.AssistKey.Label;
+            Settings.AimAssist.Enabled = c.AimAssist.Enabled;
+            Settings.AimAssist.FovRadius = c.AimAssist.FovRadius;
+            Settings.AimAssist.Speed = c.AimAssist.Speed;
+            Settings.AimAssist.Range = c.AimAssist.Range;
+            Settings.AimAssist.OnlyWhenFiring = c.AimAssist.OnlyWhenFiring;
         }
     }
 }

@@ -180,6 +180,18 @@ namespace Options
         public MenuSettings() { }
     }
 
+    public class AimAssist
+    {
+        public KeyBind AssistKey = new KeyBind("AimAssist") { Key = 0x59 };
+        public bool Enabled = true;
+        public float FovRadius = 60f;
+        public float Speed = 0.12f;
+        public float Range = 300f;
+        public bool OnlyWhenFiring = false;
+
+        public AimAssist() { }
+    }
+
     public class GameSettings
     {
         public int Mode = 0;
@@ -230,5 +242,6 @@ namespace Options
         public static Hitfix Hitfix = new Hitfix();
         public static MenuSettings Menu = new MenuSettings();
         public static GameSettings Game = new GameSettings();
+        public static AimAssist AimAssist = new AimAssist();
     }
 }
