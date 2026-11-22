@@ -367,6 +367,12 @@ namespace NyxExternal
                 if (FpsCapToggle != null) { FpsCapToggle.IsChecked = Options.Settings.Performance.FpsCapEnabled; FpsCapToggle.Content = FpsCapToggle.IsChecked == true ? "ON" : "OFF"; }
                 if (MaxFpsSlider != null) MaxFpsSlider.Value = Options.Settings.Performance.MaxFps;
                 if (MaxFpsText != null) MaxFpsText.Text = Options.Settings.Performance.MaxFps.ToString("0");
+                if (TriggerbotToggle != null) { TriggerbotToggle.IsChecked = Options.Settings.Triggerbot.Enabled; TriggerbotToggle.Content = TriggerbotToggle.IsChecked == true ? "ON" : "OFF"; }
+                if (HitboxToggle != null) { HitboxToggle.IsChecked = Options.Settings.Hitbox.Enabled; HitboxToggle.Content = HitboxToggle.IsChecked == true ? "ON" : "OFF"; }
+                if (SpinbotToggle != null) { SpinbotToggle.IsChecked = Options.Settings.Spinbot.Enabled; SpinbotToggle.Content = SpinbotToggle.IsChecked == true ? "ON" : "OFF"; }
+                if (GravityToggle != null) { GravityToggle.IsChecked = Options.Settings.Gravity.Enabled; GravityToggle.Content = GravityToggle.IsChecked == true ? "ON" : "OFF"; }
+                if (KnockbackToggle != null) { KnockbackToggle.IsChecked = Options.Settings.Knockback.Enabled; KnockbackToggle.Content = KnockbackToggle.IsChecked == true ? "ON" : "OFF"; }
+                if (HitfixToggle != null) { HitfixToggle.IsChecked = Options.Settings.Hitfix.Enabled; HitfixToggle.Content = HitfixToggle.IsChecked == true ? "ON" : "OFF"; }
                 if (GameModeCombo != null && Options.Settings.Game.Mode >= 0 && Options.Settings.Game.Mode <= 3) GameModeCombo.SelectedIndex = Options.Settings.Game.Mode;
             }
             catch { }
@@ -779,6 +785,12 @@ namespace NyxExternal
         private void aimassistrange(object sender, RoutedPropertyChangedEventArgs<double> e) { if (_shutup || AimAssistRangeSlider == null) return; Options.Settings.AimAssist.Range = (float)AimAssistRangeSlider.Value; if (AimAssistRangeText != null) AimAssistRangeText.Text = AimAssistRangeSlider.Value.ToString("0"); }
         private void fpscaptgl(object sender, RoutedEventArgs e) { if (_shutup || !(sender is ToggleButton tb)) return; tb.Content = tb.IsChecked == true ? "ON" : "OFF"; Options.Settings.Performance.FpsCapEnabled = tb.IsChecked == true; }
         private void maxfps(object sender, RoutedPropertyChangedEventArgs<double> e) { if (_shutup || MaxFpsSlider == null) return; Options.Settings.Performance.MaxFps = (int)MaxFpsSlider.Value; if (MaxFpsText != null) MaxFpsText.Text = MaxFpsSlider.Value.ToString("0"); }
+        private void triggerbotgl(object sender, RoutedEventArgs e) { if (_shutup || !(sender is ToggleButton tb)) return; tb.Content = tb.IsChecked == true ? "ON" : "OFF"; Options.Settings.Triggerbot.Enabled = tb.IsChecked == true; }
+        private void hitboxgl(object sender, RoutedEventArgs e) { if (_shutup || !(sender is ToggleButton tb)) return; tb.Content = tb.IsChecked == true ? "ON" : "OFF"; Options.Settings.Hitbox.Enabled = tb.IsChecked == true; }
+        private void spinbotgl(object sender, RoutedEventArgs e) { if (_shutup || !(sender is ToggleButton tb)) return; tb.Content = tb.IsChecked == true ? "ON" : "OFF"; Options.Settings.Spinbot.Enabled = tb.IsChecked == true; }
+        private void gravitygl(object sender, RoutedEventArgs e) { if (_shutup || !(sender is ToggleButton tb)) return; tb.Content = tb.IsChecked == true ? "ON" : "OFF"; Options.Settings.Gravity.Enabled = tb.IsChecked == true; }
+        private void knockbackgl(object sender, RoutedEventArgs e) { if (_shutup || !(sender is ToggleButton tb)) return; tb.Content = tb.IsChecked == true ? "ON" : "OFF"; Options.Settings.Knockback.Enabled = tb.IsChecked == true; }
+        private void hitfixgl(object sender, RoutedEventArgs e) { if (_shutup || !(sender is ToggleButton tb)) return; tb.Content = tb.IsChecked == true ? "ON" : "OFF"; Options.Settings.Hitfix.Enabled = tb.IsChecked == true; }
 
         private void fillfov(object sender, RoutedEventArgs e) { if (_shutup || !(sender is ToggleButton tb)) return; tb.Content = tb.IsChecked == true ? "ON" : "OFF"; Options.Settings.Aiming.FillFOV = tb.IsChecked == true; }
 

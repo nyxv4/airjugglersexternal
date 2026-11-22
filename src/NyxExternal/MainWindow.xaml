@@ -401,49 +401,41 @@
                     <StackPanel Grid.Row="1">
                         <RadioButton x:Name="AimbotTab" Style="{StaticResource tabz_cuh}" IsChecked="True">
                             <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="🎯" Margin="0,0,8,0" FontSize="14"/>
                                 <TextBlock Text="AIMBOT" VerticalAlignment="Center"/>
                             </StackPanel>
                         </RadioButton>
                         <RadioButton x:Name="SilentTab" Style="{StaticResource tabz_cuh}">
                             <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="🤫" Margin="0,0,8,0" FontSize="14"/>
                                 <TextBlock Text="SILENT" VerticalAlignment="Center"/>
                             </StackPanel>
                         </RadioButton>
                         <RadioButton x:Name="VisualsTab" Style="{StaticResource tabz_cuh}">
                             <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="👁️" Margin="0,0,8,0" FontSize="14"/>
                                 <TextBlock Text="VISUALS" VerticalAlignment="Center"/>
                             </StackPanel>
                         </RadioButton>
                         <RadioButton x:Name="ChecksTab" Style="{StaticResource tabz_cuh}">
                             <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="✅" Margin="0,0,8,0" FontSize="14"/>
                                 <TextBlock Text="CHECKS" VerticalAlignment="Center"/>
                             </StackPanel>
                         </RadioButton>
                         <RadioButton x:Name="MiscTab" Style="{StaticResource tabz_cuh}">
                             <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="🧰" Margin="0,0,8,0" FontSize="14"/>
                                 <TextBlock Text="MISC" VerticalAlignment="Center"/>
                             </StackPanel>
                         </RadioButton>
                         <RadioButton x:Name="ExplorerTab" Style="{StaticResource tabz_cuh}">
                             <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="📁" Margin="0,0,8,0" FontSize="14"/>
                                 <TextBlock Text="EXPLORER" VerticalAlignment="Center"/>
                             </StackPanel>
                         </RadioButton>
                         <RadioButton x:Name="PlayersTab" Style="{StaticResource tabz_cuh}">
                             <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="👥" Margin="0,0,8,0" FontSize="14"/>
                                 <TextBlock Text="PLAYERS" VerticalAlignment="Center"/>
                             </StackPanel>
                         </RadioButton>
                         <RadioButton x:Name="SettingsTab" Style="{StaticResource tabz_cuh}">
                             <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="⚙️" Margin="0,0,8,0" FontSize="14"/>
                                 <TextBlock Text="SETTINGS" VerticalAlignment="Center"/>
                             </StackPanel>
                         </RadioButton>
@@ -1017,6 +1009,50 @@
                                     <Button x:Name="FlightBindButton" Width="90" Height="26" Style="{StaticResource small_btn}" Click="flightkey">SET</Button>
                                 </StackPanel>
                             </Border>
+
+                            <TextBlock Text="COMBAT" Foreground="#333" FontSize="10" FontWeight="Bold" Margin="0,10,0,10"/>
+
+                            <UniformGrid Columns="3">
+                                <Border Background="#0A0A0A" BorderBrush="#111" BorderThickness="1" Padding="10" Margin="0,0,5,10" CornerRadius="4">
+                                    <StackPanel>
+                                        <TextBlock Text="TRIGGERBOT" Foreground="#555" FontSize="8" HorizontalAlignment="Center" Margin="0,0,0,5"/>
+                                        <ToggleButton x:Name="TriggerbotToggle" Width="40" Height="20" Style="{StaticResource toggle_vibe}" Content="OFF" Click="triggerbotgl"/>
+                                    </StackPanel>
+                                </Border>
+                                <Border Background="#0A0A0A" BorderBrush="#111" BorderThickness="1" Padding="10" Margin="2,0,2,10" CornerRadius="4">
+                                    <StackPanel>
+                                        <TextBlock Text="HITBOX" Foreground="#555" FontSize="8" HorizontalAlignment="Center" Margin="0,0,0,5"/>
+                                        <ToggleButton x:Name="HitboxToggle" Width="40" Height="20" Style="{StaticResource toggle_vibe}" Content="OFF" Click="hitboxgl"/>
+                                    </StackPanel>
+                                </Border>
+                                <Border Background="#0A0A0A" BorderBrush="#111" BorderThickness="1" Padding="10" Margin="5,0,0,10" CornerRadius="4">
+                                    <StackPanel>
+                                        <TextBlock Text="SPINBOT" Foreground="#555" FontSize="8" HorizontalAlignment="Center" Margin="0,0,0,5"/>
+                                        <ToggleButton x:Name="SpinbotToggle" Width="40" Height="20" Style="{StaticResource toggle_vibe}" Content="OFF" Click="spinbotgl"/>
+                                    </StackPanel>
+                                </Border>
+                            </UniformGrid>
+                            <UniformGrid Columns="3">
+                                <Border Background="#0A0A0A" BorderBrush="#111" BorderThickness="1" Padding="10" Margin="0,0,5,0" CornerRadius="4">
+                                    <StackPanel>
+                                        <TextBlock Text="GRAVITY" Foreground="#555" FontSize="8" HorizontalAlignment="Center" Margin="0,0,0,5"/>
+                                        <ToggleButton x:Name="GravityToggle" Width="40" Height="20" Style="{StaticResource toggle_vibe}" Content="OFF" Click="gravitygl"/>
+                                    </StackPanel>
+                                </Border>
+                                <Border Background="#0A0A0A" BorderBrush="#111" BorderThickness="1" Padding="10" Margin="2,0,2,0" CornerRadius="4">
+                                    <StackPanel>
+                                        <TextBlock Text="KNOCKBACK" Foreground="#555" FontSize="8" HorizontalAlignment="Center" Margin="0,0,0,5"/>
+                                        <ToggleButton x:Name="KnockbackToggle" Width="40" Height="20" Style="{StaticResource toggle_vibe}" Content="OFF" Click="knockbackgl"/>
+                                    </StackPanel>
+                                </Border>
+                                <Border Background="#0A0A0A" BorderBrush="#111" BorderThickness="1" Padding="10" Margin="5,0,0,0" CornerRadius="4">
+                                    <StackPanel>
+                                        <TextBlock Text="HIT FIX" Foreground="#555" FontSize="8" HorizontalAlignment="Center" Margin="0,0,0,5"/>
+                                        <ToggleButton x:Name="HitfixToggle" Width="40" Height="20" Style="{StaticResource toggle_vibe}" Content="OFF" Click="hitfixgl"/>
+                                    </StackPanel>
+                                </Border>
+                            </UniformGrid>
+                            <TextBlock Text="Hold their keybinds to activate" Foreground="#444" FontSize="8" Margin="0,6,0,0"/>
                         </StackPanel>
 
                         <StackPanel Visibility="{Binding IsChecked, ElementName=ExplorerTab, Converter={StaticResource BooleanToVisibilityConverter}}" Margin="0,20,0,0">
