@@ -26,6 +26,7 @@ namespace NyxExternal.config
         public MenuConfig Menu { get; set; } = new();
         public GameConfig Game { get; set; } = new();
         public AimAssistConfig AimAssist { get; set; } = new();
+        public PerformanceConfig Performance { get; set; } = new();
     }
 
     public class HumanoidConfig
@@ -194,6 +195,12 @@ namespace NyxExternal.config
         public float Speed { get; set; } = 0.12f;
         public float Range { get; set; } = 300f;
         public bool OnlyWhenFiring { get; set; }
+    }
+
+    public class PerformanceConfig
+    {
+        public bool FpsCapEnabled { get; set; }
+        public int MaxFps { get; set; } = 240;
     }
 
     public class KeyBindConfig
@@ -435,7 +442,8 @@ namespace NyxExternal.config
                     Speed = Settings.AimAssist.Speed,
                     Range = Settings.AimAssist.Range,
                     OnlyWhenFiring = Settings.AimAssist.OnlyWhenFiring
-                }
+                },
+                Performance = new() { FpsCapEnabled = Settings.Performance.FpsCapEnabled, MaxFps = Settings.Performance.MaxFps }
             };
         }
 
@@ -593,6 +601,9 @@ namespace NyxExternal.config
             Settings.AimAssist.Speed = c.AimAssist.Speed;
             Settings.AimAssist.Range = c.AimAssist.Range;
             Settings.AimAssist.OnlyWhenFiring = c.AimAssist.OnlyWhenFiring;
+
+            Settings.Performance.FpsCapEnabled = c.Performance.FpsCapEnabled;
+            Settings.Performance.MaxFps = c.Performance.MaxFps;
         }
     }
 }

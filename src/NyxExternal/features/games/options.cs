@@ -192,6 +192,14 @@ namespace Options
         public AimAssist() { }
     }
 
+    public class Performance
+    {
+        public bool FpsCapEnabled = false;
+        public int MaxFps = 240;
+
+        public Performance() { }
+    }
+
     public class GameSettings
     {
         public int Mode = 0;
@@ -243,5 +251,6 @@ namespace Options
         public static MenuSettings Menu = new MenuSettings();
         public static GameSettings Game = new GameSettings();
         public static AimAssist AimAssist = new AimAssist();
+        public static Performance Performance = new Performance();
     }
 }
