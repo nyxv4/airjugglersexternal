@@ -186,8 +186,23 @@ namespace NyxExternal.games.universal.aiming
             var screen = NyxExternal.SDK.worldtoscreen.WorldToScreenHelper.WorldToScreen(predPos);
             if (screen.x == -1) return;
 
-            if (s.AimingType == 0) spin_cam(predPos, s);
-            else move_rat(new NyxExternal.SDK.worldtoscreen.WorldToScreenHelper.POINT { x = (int)screen.x, y = (int)screen.y }, m, s);
+            if (s.AimingType == 0) { spin_cam(predPos, s); return; }
+
+            var tgt = new NyxExternal.SDK.worldtoscreen.WorldToScreenHelper.POINT { x = (int)screen.x, y = (int)screen.y };
+
+            if (s.Shake && s.ShakeDistance > 0f)
+            {
+                var localPos = nyxutil.LocalPos(cache);
+                float dx = predPos.x - localPos.x, dy = predPos.y - localPos.y, dz = predPos.z - localPos.z;
+                float dist = (float)Math.Sqrt(dx * dx + dy * dy + dz * dz);
+                if (dist <= s.ShakeDistance)
+                {
+                    float tt = (float)Environment.TickCount / 1000f;
+                    tgt.x += (int)(Math.Sin(tt * 35.0) * s.ShakeAmount);
+                }
+            }
+
+            move_rat(tgt, m, s);
         }
 
         private static void go_crazy()

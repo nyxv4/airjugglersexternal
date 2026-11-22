@@ -82,6 +82,9 @@ namespace Options
         public bool AnimatedFOV = false;
         public float Range = 100f;
         public int TargetBone = 0;
+        public bool Shake = false;
+        public float ShakeDistance = 15f;
+        public float ShakeAmount = 5f;
 
         public Aiming() { }
     }

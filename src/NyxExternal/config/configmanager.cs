@@ -86,6 +86,9 @@ namespace NyxExternal.config
         public bool AnimatedFOV { get; set; }
         public float Range { get; set; } = 100f;
         public int TargetBone { get; set; }
+        public bool Shake { get; set; }
+        public float ShakeDistance { get; set; } = 15f;
+        public float ShakeAmount { get; set; } = 5f;
     }
 
     public class SilentConfig
@@ -330,7 +333,10 @@ namespace NyxExternal.config
                     FillFOV = Settings.Aiming.FillFOV,
                     AnimatedFOV = Settings.Aiming.AnimatedFOV,
                     Range = Settings.Aiming.Range,
-                    TargetBone = Settings.Aiming.TargetBone
+                    TargetBone = Settings.Aiming.TargetBone,
+                    Shake = Settings.Aiming.Shake,
+                    ShakeDistance = Settings.Aiming.ShakeDistance,
+                    ShakeAmount = Settings.Aiming.ShakeAmount
                 },
                 Silent = new()
                 {
@@ -460,6 +466,9 @@ namespace NyxExternal.config
             Settings.Aiming.AnimatedFOV = c.Aiming.AnimatedFOV;
             Settings.Aiming.Range = c.Aiming.Range;
             Settings.Aiming.TargetBone = c.Aiming.TargetBone;
+            Settings.Aiming.Shake = c.Aiming.Shake;
+            Settings.Aiming.ShakeDistance = c.Aiming.ShakeDistance;
+            Settings.Aiming.ShakeAmount = c.Aiming.ShakeAmount;
 
             Settings.Silent.SilentAimbotKey.Key = c.Silent.SilentAimbotKey.Key;
             Settings.Silent.SilentAimbotKey.MouseButton = c.Silent.SilentAimbotKey.MouseButton;

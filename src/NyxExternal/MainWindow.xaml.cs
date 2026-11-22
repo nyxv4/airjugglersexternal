@@ -48,6 +48,7 @@ namespace NyxExternal
         private DispatcherTimer _ping;
         private bool _shutup = false;
         private bool _hiddenMode = false;
+        private bool _forceClose = false;
         private CancellationTokenSource _lookin;
         private IMGUI.Program imguiOverlay;
 
@@ -107,6 +108,21 @@ namespace NyxExternal
                 if (RegisterHotKey(hwnd, HOTKEY_ID, 0, _menuVk)) _hotkeyRegistered = true;
             }
             catch { }
+        }
+
+        protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
+        {
+            if (!_forceClose)
+            {
+                e.Cancel = true;
+                Visibility = Visibility.Collapsed;
+            }
+            base.OnClosing(e);
+        }
+
+        private void hidewindow(object sender, RoutedEventArgs e)
+        {
+            Visibility = Visibility.Collapsed;
         }
 
         protected override void OnClosed(EventArgs e)
@@ -287,6 +303,11 @@ namespace NyxExternal
                 if (SilentAimbotKeyButton != null) { var kb = Options.Settings.Silent.SilentAimbotKey; if (kb != null) SilentAimbotKeyButton.Content = kb.Key > 0 ? KeyInterop.KeyFromVirtualKey(kb.Key).ToString() : kb.MouseButton >= 0 ? (kb.MouseButton == 0 ? "M1" : kb.MouseButton == 1 ? "M2" : "M3") : "SET"; }
                 if (MenuKeyButton != null) { var mk = Options.Settings.Menu.MenuKey; if (mk != null) MenuKeyButton.Content = key_name(mk.Key); }
                 apply_menu_hotkey(IntPtr.Zero);
+                if (ShakeToggle != null) { ShakeToggle.IsChecked = Options.Settings.Aiming.Shake; ShakeToggle.Content = ShakeToggle.IsChecked == true ? "ON" : "OFF"; }
+                if (ShakeDistSlider != null) ShakeDistSlider.Value = Options.Settings.Aiming.ShakeDistance;
+                if (ShakeAmtSlider != null) ShakeAmtSlider.Value = Options.Settings.Aiming.ShakeAmount;
+                if (ShakeDistText != null) ShakeDistText.Text = Options.Settings.Aiming.ShakeDistance.ToString("0");
+                if (ShakeAmtText != null) ShakeAmtText.Text = Options.Settings.Aiming.ShakeAmount.ToString("0");
             }
             catch { }
             finally { _shutup = false; }
@@ -674,6 +695,10 @@ namespace NyxExternal
 
         private void showfov(object sender, RoutedEventArgs e) { if (_shutup || !(sender is ToggleButton tb)) return; tb.Content = tb.IsChecked == true ? "ON" : "OFF"; Options.Settings.Aiming.ShowFOV = tb.IsChecked == true; }
 
+        private void shaketgl(object sender, RoutedEventArgs e) { if (_shutup || !(sender is ToggleButton tb)) return; tb.Content = tb.IsChecked == true ? "ON" : "OFF"; Options.Settings.Aiming.Shake = tb.IsChecked == true; }
+        private void shakedist(object sender, RoutedPropertyChangedEventArgs<double> e) { if (_shutup || ShakeDistSlider == null) return; Options.Settings.Aiming.ShakeDistance = (float)ShakeDistSlider.Value; if (ShakeDistText != null) ShakeDistText.Text = Options.Settings.Aiming.ShakeDistance.ToString("0"); }
+        private void shakeamt(object sender, RoutedPropertyChangedEventArgs<double> e) { if (_shutup || ShakeAmtSlider == null) return; Options.Settings.Aiming.ShakeAmount = (float)ShakeAmtSlider.Value; if (ShakeAmtText != null) ShakeAmtText.Text = Options.Settings.Aiming.ShakeAmount.ToString("0"); }
+
         private void fillfov(object sender, RoutedEventArgs e) { if (_shutup || !(sender is ToggleButton tb)) return; tb.Content = tb.IsChecked == true ? "ON" : "OFF"; Options.Settings.Aiming.FillFOV = tb.IsChecked == true; }
 
         private void animatedfov(object sender, RoutedEventArgs e) { if (_shutup || !(sender is ToggleButton tb)) return; tb.Content = tb.IsChecked == true ? "ANIMATE" : "ANIMATE"; Options.Settings.Aiming.AnimatedFOV = tb.IsChecked == true; }
@@ -682,7 +707,7 @@ namespace NyxExternal
 
         private void startvibing(object sender, RoutedEventArgs e) { ((Storyboard)Resources["FadeInSequence"]).Begin(); ((Storyboard)Resources["PulseGlow"]).Begin(); settheme(Colors.White); }
 
-        private void bye(object sender, RoutedEventArgs e) { try { HumanoidModule.Stop(); CameraModule.Stop(); visuals.Stop(); TPHandler.Stop(); aiming.Stop(); desync.Stop(); flight.Stop(); silentaiming.Stop(); triggerbot.Stop(); hitbox.Stop(); spinbot.Stop(); gravityhack.Stop(); knockbackhack.Stop(); hitfix.Stop(); IMGUI.Program.kill();} catch { } Application.Current.Shutdown(); }
+        private void bye(object sender, RoutedEventArgs e) { _forceClose = true; try { HumanoidModule.Stop(); CameraModule.Stop(); visuals.Stop(); TPHandler.Stop(); aiming.Stop(); desync.Stop(); flight.Stop(); silentaiming.Stop(); triggerbot.Stop(); hitbox.Stop(); spinbot.Stop(); gravityhack.Stop(); knockbackhack.Stop(); hitfix.Stop(); IMGUI.Program.kill();} catch { } Application.Current.Shutdown(); }
 
         protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e) { if (e.ChangedButton == MouseButton.Left) DragMove(); }
 
