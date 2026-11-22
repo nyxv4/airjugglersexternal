@@ -108,12 +108,19 @@ namespace NyxExternal.games.universal.hitbox
                                     originals[part.Address] = orig;
                                 }
                                 var sz = orig.original;
-                                SDKInstance.Mem.Write<Vector3>(prim + Offsets.Primitive.Size, new Vector3
+                                float ex = sz.x * s.Multiplier;
+                                float ey = sz.y * s.Multiplier;
+                                float ez = sz.z * s.Multiplier;
+
+                                if (Options.Settings.Game.Mode == Options.GameSettings.Bedwars)
                                 {
-                                    x = sz.x * s.Multiplier,
-                                    y = sz.y * s.Multiplier,
-                                    z = sz.z * s.Multiplier
-                                });
+                                    const float BEDWARS_MAX = 14.4f;
+                                    if (ex > BEDWARS_MAX) ex = BEDWARS_MAX;
+                                    if (ey > BEDWARS_MAX) ey = BEDWARS_MAX;
+                                    if (ez > BEDWARS_MAX) ez = BEDWARS_MAX;
+                                }
+
+                                SDKInstance.Mem.Write<Vector3>(prim + Offsets.Primitive.Size, new Vector3 { x = ex, y = ey, z = ez });
                             }
                         }
                     }
