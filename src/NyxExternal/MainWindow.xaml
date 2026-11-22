@@ -313,9 +313,11 @@
 
                     <StackPanel Grid.Row="0" Margin="20,25,20,20">
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="Nyx External
-                                       " FontSize="26" FontWeight="Black" Foreground="White"/>
-                            <TextBlock Text="C#" FontSize="26" FontWeight="Black" Foreground="{DynamicResource AccentBrush}" Margin="5,0,0,0"/>
+                            <TextBlock Text="NYX" FontSize="30" FontWeight="Black" Foreground="White"/>
+                            <StackPanel Margin="8,4,0,0">
+                                <TextBlock Text="EXTERNAL" FontSize="11" FontWeight="Bold" Foreground="{DynamicResource AccentBrush}"/>
+                                <TextBlock Text="C#" FontSize="8" Foreground="#555"/>
+                            </StackPanel>
                         </StackPanel>
 
                         <ComboBox x:Name="GameModeCombo"
