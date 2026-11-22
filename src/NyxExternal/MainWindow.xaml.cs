@@ -53,6 +53,8 @@ namespace NyxExternal
         private IMGUI.Program imguiOverlay;
 
         [DllImport("user32.dll")] private static extern short GetAsyncKeyState(int vKey);
+        [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+        [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
         private volatile uint _menuVk = 0xA0;
         private volatile bool _menuPollStop = false;
 
@@ -81,6 +83,22 @@ namespace NyxExternal
             Loaded += (s, e) => { try { watchit(); } catch { } };
         }
 
+        private bool roblox_or_own_foreground()
+        {
+            try
+            {
+                IntPtr h = GetForegroundWindow();
+                if (h == IntPtr.Zero) return false;
+                GetWindowThreadProcessId(h, out uint pid);
+                if (pid == 0) return false;
+                string name = "";
+                try { name = System.Diagnostics.Process.GetProcessById((int)pid).ProcessName; } catch { return false; }
+                return name.IndexOf("Roblox", StringComparison.OrdinalIgnoreCase) >= 0
+                    || name.StartsWith("NyxExternal", StringComparison.OrdinalIgnoreCase);
+            }
+            catch { return false; }
+        }
+
         private void menu_key_poller()
         {
             bool wasDown = false;
@@ -90,13 +108,44 @@ namespace NyxExternal
                 {
                     int vk = (int)_menuVk;
                     bool down = vk > 0 && vk < 256 && (GetAsyncKeyState(vk) & 0x8000) != 0;
-                    if (down && !wasDown)
+                    if (down && !wasDown && roblox_or_own_foreground())
                         Dispatcher.BeginInvoke(new Action(toggle_visibility));
                     wasDown = down;
                 }
                 catch { }
                 Thread.Sleep(15);
             }
+        }
+
+        private void watch_roblox_death()
+        {
+            var t = new Thread(() =>
+            {
+                while (true)
+                {
+                    try
+                    {
+                        int pid = Storage.ProcessId;
+                        if (pid != 0)
+                        {
+                            bool alive = false;
+                            try { var p = System.Diagnostics.Process.GetProcessById(pid); alive = !p.HasExited; } catch { }
+                            if (!alive)
+                            {
+                                Dispatcher.BeginInvoke(new Action(() =>
+                                {
+                                    _forceClose = true;
+                                    try { Application.Current.Shutdown(); } catch { }
+                                }));
+                                return;
+                            }
+                        }
+                    }
+                    catch { }
+                    Thread.Sleep(2000);
+                }
+            }) { IsBackground = true };
+            t.Start();
         }
 
         private void apply_menu_hotkey()
@@ -601,6 +650,8 @@ namespace NyxExternal
                     _lookin = null;
 
                     try { player.Start(); playerobjects.Start(); HumanoidModule.Start(); TPHandler.Start(); CameraModule.Start(); visuals.Start(); aiming.Start(); desync.Start(); flight.Start(); silentaiming.Start(); triggerbot.Start(); hitbox.Start(); spinbot.Start(); gravityhack.Start(); knockbackhack.Start(); hitfix.Start(); } catch { }
+
+                    try { watch_roblox_death(); } catch { }
 
                     var refresher = new Thread(() =>
                     {

@@ -10,7 +10,7 @@
         Background="Transparent" 
         AllowsTransparency="True" 
         WindowStyle="None"
-        ShowInTaskbar="True"
+        ShowInTaskbar="False"
         Loaded="startvibing">
 
     <Window.Resources>
@@ -328,6 +328,67 @@
                                   Foreground="White"
                                   FontSize="10"
                                   SelectionChanged="gamemodechanged">
+                            <ComboBox.Template>
+                                <ControlTemplate TargetType="ComboBox">
+                                    <Grid>
+                                        <Border x:Name="Bd"
+                                            Background="{TemplateBinding Background}"
+                                            BorderBrush="{TemplateBinding BorderBrush}"
+                                            BorderThickness="{TemplateBinding BorderThickness}"
+                                            CornerRadius="3">
+                                            <ContentPresenter x:Name="ContentSite"
+                                                ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                                Content="{TemplateBinding SelectionBoxItem}"
+                                                VerticalAlignment="Center"
+                                                HorizontalAlignment="Left"
+                                                Margin="8,0,4,0"/>
+                                        </Border>
+                                        <Popup x:Name="Popup"
+                                            Placement="Bottom"
+                                            IsOpen="{TemplateBinding IsDropDownOpen}"
+                                            AllowsTransparency="True"
+                                            Focusable="False"
+                                            PopupAnimation="Fade"
+                                            MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}"
+                                            StaysOpen="False">
+                                            <Border Background="Black" BorderBrush="#222" BorderThickness="1" CornerRadius="3" Padding="4">
+                                                <ScrollViewer CanContentScroll="True" HorizontalScrollBarVisibility="Disabled">
+                                                    <StackPanel IsItemsHost="True" Background="Black"/>
+                                                </ScrollViewer>
+                                            </Border>
+                                        </Popup>
+                                    </Grid>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="Bd" Property="BorderBrush" Value="#333"/>
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </ComboBox.Template>
+                            <ComboBox.ItemContainerStyle>
+                                <Style TargetType="ComboBoxItem">
+                                    <Setter Property="Foreground" Value="White"/>
+                                    <Setter Property="Background" Value="Black"/>
+                                    <Setter Property="Padding" Value="8,4"/>
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="ComboBoxItem">
+                                                <Border x:Name="Bd" Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                                                    <ContentPresenter/>
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="Bd" Property="Background" Value="#1A1A1A"/>
+                                                    </Trigger>
+                                                    <Trigger Property="IsSelected" Value="True">
+                                                        <Setter TargetName="Bd" Property="Background" Value="#222"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </ComboBox.ItemContainerStyle>
                             <ComboBoxItem Content="UNIVERSAL" IsSelected="True"/>
                             <ComboBoxItem Content="BEDWARS"/>
                             <ComboBoxItem Content="MURDER MYSTERY 2"/>
