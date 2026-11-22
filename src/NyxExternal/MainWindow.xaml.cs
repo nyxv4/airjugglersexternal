@@ -355,6 +355,18 @@ namespace NyxExternal
                 if (ShakeAmtSlider != null) ShakeAmtSlider.Value = Options.Settings.Aiming.ShakeAmount;
                 if (ShakeDistText != null) ShakeDistText.Text = Options.Settings.Aiming.ShakeDistance.ToString("0");
                 if (ShakeAmtText != null) ShakeAmtText.Text = Options.Settings.Aiming.ShakeAmount.ToString("0");
+                if (ObjectEspToggle != null) { ObjectEspToggle.IsChecked = Options.Settings.Visuals.ObjectESP; ObjectEspToggle.Content = ObjectEspToggle.IsChecked == true ? "ON" : "OFF"; }
+                if (AimAssistToggle != null) { AimAssistToggle.IsChecked = Options.Settings.AimAssist.Enabled; AimAssistToggle.Content = AimAssistToggle.IsChecked == true ? "ON" : "OFF"; }
+                if (AimAssistFireToggle != null) { AimAssistFireToggle.IsChecked = Options.Settings.AimAssist.OnlyWhenFiring; AimAssistFireToggle.Content = AimAssistFireToggle.IsChecked == true ? "ON" : "OFF"; }
+                if (AimAssistFovSlider != null) AimAssistFovSlider.Value = Options.Settings.AimAssist.FovRadius;
+                if (AimAssistFovText != null) AimAssistFovText.Text = Options.Settings.AimAssist.FovRadius.ToString("0");
+                if (AimAssistSpeedSlider != null) AimAssistSpeedSlider.Value = Options.Settings.AimAssist.Speed * 100;
+                if (AimAssistSpeedText != null) AimAssistSpeedText.Text = (Options.Settings.AimAssist.Speed * 100).ToString("0");
+                if (AimAssistRangeSlider != null) AimAssistRangeSlider.Value = Options.Settings.AimAssist.Range;
+                if (AimAssistRangeText != null) AimAssistRangeText.Text = Options.Settings.AimAssist.Range.ToString("0");
+                if (FpsCapToggle != null) { FpsCapToggle.IsChecked = Options.Settings.Performance.FpsCapEnabled; FpsCapToggle.Content = FpsCapToggle.IsChecked == true ? "ON" : "OFF"; }
+                if (MaxFpsSlider != null) MaxFpsSlider.Value = Options.Settings.Performance.MaxFps;
+                if (MaxFpsText != null) MaxFpsText.Text = Options.Settings.Performance.MaxFps.ToString("0");
                 if (GameModeCombo != null && Options.Settings.Game.Mode >= 0 && Options.Settings.Game.Mode <= 3) GameModeCombo.SelectedIndex = Options.Settings.Game.Mode;
             }
             catch { }
@@ -758,6 +770,15 @@ namespace NyxExternal
         private void shaketgl(object sender, RoutedEventArgs e) { if (_shutup || !(sender is ToggleButton tb)) return; tb.Content = tb.IsChecked == true ? "ON" : "OFF"; Options.Settings.Aiming.Shake = tb.IsChecked == true; }
         private void shakedist(object sender, RoutedPropertyChangedEventArgs<double> e) { if (_shutup || ShakeDistSlider == null) return; Options.Settings.Aiming.ShakeDistance = (float)ShakeDistSlider.Value; if (ShakeDistText != null) ShakeDistText.Text = Options.Settings.Aiming.ShakeDistance.ToString("0"); }
         private void shakeamt(object sender, RoutedPropertyChangedEventArgs<double> e) { if (_shutup || ShakeAmtSlider == null) return; Options.Settings.Aiming.ShakeAmount = (float)ShakeAmtSlider.Value; if (ShakeAmtText != null) ShakeAmtText.Text = Options.Settings.Aiming.ShakeAmount.ToString("0"); }
+
+        private void objectesptgl(object sender, RoutedEventArgs e) { if (_shutup || !(sender is ToggleButton tb)) return; tb.Content = tb.IsChecked == true ? "ON" : "OFF"; Options.Settings.Visuals.ObjectESP = tb.IsChecked == true; }
+        private void aimassigtgl(object sender, RoutedEventArgs e) { if (_shutup || !(sender is ToggleButton tb)) return; tb.Content = tb.IsChecked == true ? "ON" : "OFF"; Options.Settings.AimAssist.Enabled = tb.IsChecked == true; }
+        private void aimassistfiretgl(object sender, RoutedEventArgs e) { if (_shutup || !(sender is ToggleButton tb)) return; tb.Content = tb.IsChecked == true ? "ON" : "OFF"; Options.Settings.AimAssist.OnlyWhenFiring = tb.IsChecked == true; }
+        private void aimassistfov(object sender, RoutedPropertyChangedEventArgs<double> e) { if (_shutup || AimAssistFovSlider == null) return; Options.Settings.AimAssist.FovRadius = (float)AimAssistFovSlider.Value; if (AimAssistFovText != null) AimAssistFovText.Text = AimAssistFovSlider.Value.ToString("0"); }
+        private void aimassistspeed(object sender, RoutedPropertyChangedEventArgs<double> e) { if (_shutup || AimAssistSpeedSlider == null) return; Options.Settings.AimAssist.Speed = (float)(AimAssistSpeedSlider.Value / 100.0); if (AimAssistSpeedText != null) AimAssistSpeedText.Text = AimAssistSpeedSlider.Value.ToString("0"); }
+        private void aimassistrange(object sender, RoutedPropertyChangedEventArgs<double> e) { if (_shutup || AimAssistRangeSlider == null) return; Options.Settings.AimAssist.Range = (float)AimAssistRangeSlider.Value; if (AimAssistRangeText != null) AimAssistRangeText.Text = AimAssistRangeSlider.Value.ToString("0"); }
+        private void fpscaptgl(object sender, RoutedEventArgs e) { if (_shutup || !(sender is ToggleButton tb)) return; tb.Content = tb.IsChecked == true ? "ON" : "OFF"; Options.Settings.Performance.FpsCapEnabled = tb.IsChecked == true; }
+        private void maxfps(object sender, RoutedPropertyChangedEventArgs<double> e) { if (_shutup || MaxFpsSlider == null) return; Options.Settings.Performance.MaxFps = (int)MaxFpsSlider.Value; if (MaxFpsText != null) MaxFpsText.Text = MaxFpsSlider.Value.ToString("0"); }
 
         private void fillfov(object sender, RoutedEventArgs e) { if (_shutup || !(sender is ToggleButton tb)) return; tb.Content = tb.IsChecked == true ? "ON" : "OFF"; Options.Settings.Aiming.FillFOV = tb.IsChecked == true; }
 

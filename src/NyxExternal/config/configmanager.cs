@@ -62,6 +62,7 @@ namespace NyxExternal.config
         public bool LocalPlayerESP { get; set; }
         public bool WeaponESP { get; set; } = true;
         public bool TeamColorESP { get; set; } = true;
+        public bool ObjectESP { get; set; }
         public int TracersStart { get; set; }
         public float NameSize { get; set; } = 12f;
         public float DistanceSize { get; set; } = 15f;
@@ -332,6 +333,7 @@ namespace NyxExternal.config
                     LocalPlayerESP = Settings.Visuals.LocalPlayerESP,
                     WeaponESP = Settings.Visuals.WeaponESP,
                     TeamColorESP = Settings.Visuals.TeamColorESP,
+                    ObjectESP = Settings.Visuals.ObjectESP,
                     TracersStart = Settings.Visuals.TracersStart,
                     NameSize = Settings.Visuals.NameSize,
                     DistanceSize = Settings.Visuals.DistanceSize,
@@ -474,6 +476,7 @@ namespace NyxExternal.config
             Settings.Visuals.LocalPlayerESP = c.Visuals.LocalPlayerESP;
             Settings.Visuals.WeaponESP = c.Visuals.WeaponESP;
             Settings.Visuals.TeamColorESP = c.Visuals.TeamColorESP;
+            Settings.Visuals.ObjectESP = c.Visuals.ObjectESP;
             Settings.Visuals.TracersStart = c.Visuals.TracersStart;
             Settings.Visuals.NameSize = c.Visuals.NameSize;
             Settings.Visuals.DistanceSize = c.Visuals.DistanceSize;

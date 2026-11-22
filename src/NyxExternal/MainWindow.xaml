@@ -649,6 +649,45 @@
                                 </Border>
                             </UniformGrid>
 
+                            <TextBlock Text="AIM ASSIST" Foreground="#333" FontSize="10" FontWeight="Bold" Margin="0,10,0,10"/>
+                            <UniformGrid Columns="2">
+                                <Border Background="#0A0A0A" BorderBrush="#111" BorderThickness="1" Padding="12" Margin="0,0,5,10" CornerRadius="4">
+                                    <Grid>
+                                        <TextBlock Text="AIM ASSIST" Foreground="#888" FontSize="10" FontWeight="SemiBold"/>
+                                        <ToggleButton x:Name="AimAssistToggle" HorizontalAlignment="Right" Width="45" Height="22" Style="{StaticResource toggle_vibe}" Content="ON" Click="aimassigtgl"/>
+                                    </Grid>
+                                </Border>
+                                <Border Background="#0A0A0A" BorderBrush="#111" BorderThickness="1" Padding="12" Margin="5,0,0,10" CornerRadius="4">
+                                    <Grid>
+                                        <TextBlock Text="FIRING ONLY" Foreground="#888" FontSize="10" FontWeight="SemiBold"/>
+                                        <ToggleButton x:Name="AimAssistFireToggle" HorizontalAlignment="Right" Width="45" Height="22" Style="{StaticResource toggle_vibe}" Content="OFF" Click="aimassistfiretgl"/>
+                                    </Grid>
+                                </Border>
+                            </UniformGrid>
+                            <UniformGrid Columns="3">
+                                <Border Background="#0A0A0A" BorderBrush="#111" BorderThickness="1" Padding="10" Margin="0,0,5,0" CornerRadius="4">
+                                    <StackPanel>
+                                        <TextBlock Text="FOV" Foreground="#888" FontSize="8" HorizontalAlignment="Center" Margin="0,0,0,5"/>
+                                        <Slider x:Name="AimAssistFovSlider" Style="{StaticResource slider_chill}" Minimum="10" Maximum="300" Value="60" ValueChanged="aimassistfov" Margin="0,0,30,0"/>
+                                        <TextBlock x:Name="AimAssistFovText" Text="60" Foreground="{DynamicResource AccentBrush}" HorizontalAlignment="Right" FontSize="9" FontWeight="Bold"/>
+                                    </StackPanel>
+                                </Border>
+                                <Border Background="#0A0A0A" BorderBrush="#111" BorderThickness="1" Padding="10" Margin="2,0,2,0" CornerRadius="4">
+                                    <StackPanel>
+                                        <TextBlock Text="SPEED" Foreground="#888" FontSize="8" HorizontalAlignment="Center" Margin="0,0,0,5"/>
+                                        <Slider x:Name="AimAssistSpeedSlider" Style="{StaticResource slider_chill}" Minimum="1" Maximum="50" Value="12" ValueChanged="aimassistspeed" Margin="0,0,30,0"/>
+                                        <TextBlock x:Name="AimAssistSpeedText" Text="12" Foreground="{DynamicResource AccentBrush}" HorizontalAlignment="Right" FontSize="9" FontWeight="Bold"/>
+                                    </StackPanel>
+                                </Border>
+                                <Border Background="#0A0A0A" BorderBrush="#111" BorderThickness="1" Padding="10" Margin="5,0,0,0" CornerRadius="4">
+                                    <StackPanel>
+                                        <TextBlock Text="RANGE" Foreground="#888" FontSize="8" HorizontalAlignment="Center" Margin="0,0,0,5"/>
+                                        <Slider x:Name="AimAssistRangeSlider" Style="{StaticResource slider_chill}" Minimum="50" Maximum="1000" Value="300" ValueChanged="aimassistrange" Margin="0,0,30,0"/>
+                                        <TextBlock x:Name="AimAssistRangeText" Text="300" Foreground="{DynamicResource AccentBrush}" HorizontalAlignment="Right" FontSize="9" FontWeight="Bold"/>
+                                    </StackPanel>
+                                </Border>
+                            </UniformGrid>
+
                         </StackPanel>
 
                         <StackPanel Visibility="{Binding IsChecked, ElementName=SilentTab, Converter={StaticResource BooleanToVisibilityConverter}}">
@@ -834,6 +873,16 @@
                                     </StackPanel>
                                 </Border>
                             </UniformGrid>
+
+                            <Border Background="#0A0A0A" BorderBrush="#111" BorderThickness="1" Padding="12" Margin="0,0,0,10" CornerRadius="4">
+                                <Grid>
+                                    <StackPanel>
+                                        <TextBlock Text="OBJECT ESP" Foreground="#888" FontSize="10" FontWeight="SemiBold"/>
+                                        <TextBlock Text="Bedwars objects (crystals, gens, beds)" Foreground="#555" FontSize="8"/>
+                                    </StackPanel>
+                                    <ToggleButton x:Name="ObjectEspToggle" HorizontalAlignment="Right" Width="45" Height="22" Style="{StaticResource toggle_vibe}" Content="OFF" Click="objectesptgl"/>
+                                </Grid>
+                            </Border>
                         </StackPanel>
 
                         <StackPanel Visibility="{Binding IsChecked, ElementName=ChecksTab, Converter={StaticResource BooleanToVisibilityConverter}}">
@@ -978,6 +1027,24 @@
                             <playerlist:PlayerListControl/>
                         </StackPanel>
                         <StackPanel Visibility="{Binding IsChecked, ElementName=SettingsTab, Converter={StaticResource BooleanToVisibilityConverter}}">
+
+                            <TextBlock Text="PERFORMANCE" Foreground="#333" FontSize="10" FontWeight="Bold" Margin="0,0,0,15"/>
+
+                            <UniformGrid Columns="2">
+                                <Border Background="#0A0A0A" BorderBrush="#111" BorderThickness="1" Padding="12" Margin="0,0,5,10" CornerRadius="4">
+                                    <Grid>
+                                        <TextBlock Text="FPS CAP" Foreground="#888" FontSize="10" FontWeight="SemiBold"/>
+                                        <ToggleButton x:Name="FpsCapToggle" HorizontalAlignment="Right" Width="45" Height="22" Style="{StaticResource toggle_vibe}" Content="OFF" Click="fpscaptgl"/>
+                                    </Grid>
+                                </Border>
+                                <Border Background="#0A0A0A" BorderBrush="#111" BorderThickness="1" Padding="12" Margin="5,0,0,10" CornerRadius="4">
+                                    <StackPanel>
+                                        <TextBlock Text="MAX FPS" Foreground="#888" FontSize="10" FontWeight="SemiBold"/>
+                                        <Slider x:Name="MaxFpsSlider" Style="{StaticResource slider_chill}" Minimum="30" Maximum="1000" Value="240" ValueChanged="maxfps" Margin="0,8,45,0"/>
+                                        <TextBlock x:Name="MaxFpsText" Text="240" Foreground="{DynamicResource AccentBrush}" HorizontalAlignment="Right" FontSize="10" FontWeight="Bold"/>
+                                    </StackPanel>
+                                </Border>
+                            </UniformGrid>
 
                             <TextBlock Text="CONFIGURATION" Foreground="#333" FontSize="10" FontWeight="Bold" Margin="0,0,0,15"/>
 

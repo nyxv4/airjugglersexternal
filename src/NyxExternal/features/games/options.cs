@@ -52,6 +52,7 @@ namespace Options
         public bool LocalPlayerESP = false;
         public bool WeaponESP = true;
         public bool TeamColorESP = true;
+        public bool ObjectESP = false;
         public int TracersStart = 0;
         public float NameSize = 12f;
         public float DistanceSize = 15f;

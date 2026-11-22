@@ -32,6 +32,20 @@ namespace NyxExternal.games.universal.visuals
         private static readonly object locker = new();
         private static Scene currentScene = new();
 
+        private struct ObjTag { public long Addr; public string Name; public Color Col; }
+        private static List<ObjTag> objectCache = new();
+        private static DateTime lastObjScan = DateTime.MinValue;
+
+        private static readonly (string key, Color col)[] object_keywords = {
+            ("crystal", Color.FromRgb(255, 80, 200)), ("generator", Color.FromRgb(255, 200, 60)),
+            ("bed", Color.FromRgb(120, 200, 255)), ("shop", Color.FromRgb(80, 255, 120)),
+            ("upgrade", Color.FromRgb(255, 160, 60)), ("egg", Color.FromRgb(255, 240, 120)),
+            ("tesla", Color.FromRgb(80, 220, 255)), ("fireball", Color.FromRgb(255, 90, 60)),
+            ("bridge", Color.FromRgb(200, 140, 255)), ("forge", Color.FromRgb(255, 120, 120)),
+            ("trader", Color.FromRgb(140, 255, 200)), ("rescue", Color.FromRgb(120, 255, 255)),
+            ("island", Color.FromRgb(180, 180, 180)), ("npc", Color.FromRgb(220, 220, 220)),
+        };
+
         public struct Box { public Rect r; public bool f; }
         public struct Line { public Point a, b; public Color c; public double w; }
         public struct Text { public string t; public Point p; public Color c; public double s; public bool ctr; }
@@ -245,9 +259,86 @@ namespace NyxExternal.games.universal.visuals
                         }
                     }
                 }
+                if (Settings.Game.Mode == GameSettings.Bedwars && Settings.Visuals.ObjectESP)
+                {
+                    if ((DateTime.UtcNow - lastObjScan).TotalSeconds > 3)
+                    {
+                        lastObjScan = DateTime.UtcNow;
+                        objectCache = ScanObjects(Storage.WorkspaceInstance);
+                    }
+
+                    foreach (var o in objectCache)
+                    {
+                        var inst = new SDKInstance(o.Addr);
+                        var wpos = GetPos(inst, cache);
+                        if (wpos.x == 0 && wpos.y == 0 && wpos.z == 0) continue;
+                        var s2d = WorldToScreenHelper.WorldToScreen(wpos, view, res, wp);
+                        if (s2d.x == -1) continue;
+                        var distO = (float)Math.Sqrt(Math.Pow(localPos.x - wpos.x, 2) + Math.Pow(localPos.z - wpos.z, 2));
+                        next.texts.Add(new Text { t = $"{o.Name} [{(int)distO}m]", p = new Point(s2d.x, s2d.y), c = o.Col, s = Settings.Visuals.DistanceSize * 0.8, ctr = true });
+                    }
+                }
+                else objectCache.Clear();
+
                 lock (locker) currentScene = next;
                 Thread.Sleep(1);
             }
+        }
+
+        private static bool IsPartClass(string cls) =>
+            cls != null && (cls.Contains("Part") || cls == "SpawnLocation" || cls == "Seat" || cls == "VehicleSeat");
+
+        private static SDKInstance FirstPart(SDKInstance inst, int depth)
+        {
+            if (depth <= 0 || !inst.IsValid) return new SDKInstance(0);
+            try
+            {
+                if (IsPartClass(inst.GetClass())) return inst;
+                foreach (var c in inst.GetChildren())
+                {
+                    var r = FirstPart(c, depth - 1);
+                    if (r.IsValid) return r;
+                }
+            }
+            catch { }
+            return new SDKInstance(0);
+        }
+
+        private static void ScanNode(SDKInstance node, int depth, int[] budget, List<ObjTag> results)
+        {
+            if (depth <= 0 || !node.IsValid || budget[0] <= 0) return;
+            try
+            {
+                string name = node.GetName();
+                if (!string.IsNullOrEmpty(name) && name.Length <= 40)
+                {
+                    string lower = name.ToLowerInvariant();
+                    foreach (var (key, col) in object_keywords)
+                    {
+                        if (lower.Contains(key))
+                        {
+                            var part = IsPartClass(node.GetClass()) ? node : FirstPart(node, 3);
+                            if (part.IsValid) results.Add(new ObjTag { Addr = part.Address, Name = char.ToUpperInvariant(name[0]) + name.Substring(1), Col = col });
+                            return;
+                        }
+                    }
+                }
+                foreach (var c in node.GetChildren())
+                {
+                    if (budget[0]-- <= 0) break;
+                    ScanNode(c, depth - 1, budget, results);
+                }
+            }
+            catch { }
+        }
+
+        private static List<ObjTag> ScanObjects(SDKInstance ws)
+        {
+            var results = new List<ObjTag>();
+            if (!ws.IsValid) return results;
+            var budget = new[] { 4000 };
+            try { foreach (var c in ws.GetChildren()) ScanNode(c, 4, budget, results); } catch { }
+            return results;
         }
 
         private static readonly Color[] team_palette = {
