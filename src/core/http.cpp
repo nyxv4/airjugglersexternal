@@ -34,4 +34,38 @@ namespace http
         InternetCloseHandle(inet);
         return result;
     }
+
+    bool Download(const std::string& url, const std::string& outPath)
+    {
+        if (url.rfind("https://", 0) != 0) return false;
+        auto rest = url.substr(8);
+        auto slash = rest.find('/');
+        std::wstring host(rest.begin(), rest.begin() + (slash == std::string::npos ? rest.size() : slash));
+        std::wstring path(slash == std::string::npos ? L"/" : std::wstring(rest.begin() + slash, rest.end()));
+        HINTERNET inet = InternetOpenA("NYX/1.0", INTERNET_OPEN_TYPE_PRECONFIG, nullptr, nullptr, 0);
+        if (!inet) return false;
+        std::string hostN(host.begin(), host.end());
+        HINTERNET conn = InternetConnectA(inet, hostN.c_str(), INTERNET_DEFAULT_HTTPS_PORT, nullptr, nullptr, INTERNET_SERVICE_HTTP, 0, 0);
+        if (!conn) { InternetCloseHandle(inet); return false; }
+        std::string pathN(path.begin(), path.end());
+        HINTERNET req = HttpOpenRequestA(conn, "GET", pathN.c_str(), nullptr, nullptr, nullptr,
+            INTERNET_FLAG_SECURE | INTERNET_FLAG_RELOAD | INTERNET_FLAG_NO_CACHE_WRITE, 0);
+        bool ok = false;
+        if (req && HttpSendRequestA(req, nullptr, 0, nullptr, 0))
+        {
+            HANDLE f = CreateFileA(outPath.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+            if (f != INVALID_HANDLE_VALUE)
+            {
+                char buf[16384]; DWORD read = 0; DWORD wrote = 0;
+                ok = true;
+                while (InternetReadFile(req, buf, sizeof(buf), &read) && read > 0)
+                    if (!WriteFile(f, buf, read, &wrote, nullptr) || wrote != read) { ok = false; break; }
+                CloseHandle(f);
+            }
+        }
+        if (req) InternetCloseHandle(req);
+        InternetCloseHandle(conn);
+        InternetCloseHandle(inet);
+        return ok;
+    }
 }
