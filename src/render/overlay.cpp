@@ -17,6 +17,7 @@
 #include <chrono>
 #include <mutex>
 #include <cstdarg>
+#include <cstdlib>
 
 static void Log(const char* fmt, ...)
 {
@@ -51,6 +52,7 @@ struct PlayerBox
 {
     float x1, y1, x2, y2;
     float headX, headY;
+    Vec3 headWorld, headVel;
     std::string name;
     float health, maxHealth;
     float dist;
@@ -59,6 +61,7 @@ struct PlayerBox
 };
 
 static std::vector<PlayerBox> g_players;
+static bool g_localKnocked = false;
 static Vec2 g_localScreen;
 static float g_localX, g_localY; // screen center of roblox client
 
@@ -70,6 +73,22 @@ static void CollectPlayers()
 
     uintptr_t localTeam = Instance(w.localPlayer).GetTeam();
     Vec3 localPos = sdk::LocalPlayerPos();
+
+    // local knock state (FallingDown=0, Ragdoll=1, GettingUp=2)
+    g_localKnocked = false;
+    if (g_cfg.aimbotKnockCheck)
+    {
+        auto lch = Instance(w.localPlayer).GetCharacter();
+        if (lch)
+        {
+            auto hum = lch.FindFirstChildOfClass("Humanoid");
+            if (hum)
+            {
+                int st = g_mem.Read<int>(hum.addr + OFF("Humanoid", "HumanoidStateID"));
+                g_localKnocked = (st >= 0 && st <= 2);
+            }
+        }
+    }
 
     HWND rbx = FindWindowW(nullptr, L"Roblox");
     if (!rbx) return;
@@ -107,11 +126,11 @@ static void CollectPlayers()
         if (Instance::PartTransparency(headA) > 0.9f) continue;
 
         bool teammate = false;
-        if (g_cfg.espTeamCheck)
+        if (g_cfg.espTeamCheck || g_cfg.aimbotTeamCheck)
         {
             uintptr_t t = p.GetTeam();
             teammate = (t != 0 && t == localTeam);
-            if (teammate && !g_cfg.espShowTeammates) continue;
+            if (teammate && !g_cfg.espShowTeammates && g_cfg.espTeamCheck) continue;
         }
 
         Vec3 hp = Instance::PartPosition(headA); hp.y += 0.4f;
@@ -133,6 +152,11 @@ static void CollectPlayers()
         if (nit != nameCache.end()) pb.name = nit->second;
         else { pb.name = p.GetName(); nameCache[p.addr] = pb.name; }
         pb.headAddr = headA;
+        pb.headWorld = hp;
+        {
+            uintptr_t hprim = g_mem.ReadPtr(headA + OFF("BasePart", "Primitive"));
+            pb.headVel = hprim ? g_mem.Read<Vec3>(hprim + OFF("Primitive", "AssemblyLinearVelocity")) : Vec3{};
+        }
         pb.dist = dist;
         pb.teammate = teammate;
         pb.health = p.GetHealth(); pb.maxHealth = p.GetMaxHealth();
@@ -258,23 +282,44 @@ static void RunAimbot()
 {
     if (!g_cfg.aimbotEnabled || !g_mem.IsAttached()) return;
     if (!key_down(g_cfg.aimbotKey)) return;
+    if (g_cfg.aimbotKnockCheck && g_localKnocked) return;
     if (g_players.empty()) return;
 
     float cx = g_localX, cy = g_localY;
     const PlayerBox* best = nullptr;
     float bestD = g_cfg.aimbotFov;
+    float tx = 0, ty = 0;
 
     for (auto& p : g_players)
     {
-        if (p.teammate || p.dist > g_cfg.aimbotRange) continue;
-        float dx = p.headX - cx, dy = p.headY - cy;
+        if (p.teammate && g_cfg.aimbotTeamCheck) continue;
+        if (g_cfg.aimbotHealthCheck && p.health <= 0.f) continue;
+        if (g_cfg.aimbotRangeCheck && p.dist > g_cfg.aimbotRange) continue;
+
+        // prediction: lead the target by velocity * predMs
+        float px = p.headX, py = p.headY;
+        if (g_cfg.aimbotPrediction)
+        {
+            Vec3 pred{ p.headWorld.x + p.headVel.x * (g_cfg.aimbotPredMs / 1000.f),
+                       p.headWorld.y + p.headVel.y * (g_cfg.aimbotPredMs / 1000.f),
+                       p.headWorld.z + p.headVel.z * (g_cfg.aimbotPredMs / 1000.f) };
+            Vec2 s2;
+            if (sdk::WorldToScreen(pred, s2) && s2.x != -1) { px = s2.x; py = s2.y; }
+        }
+
+        // shake: horizontal jitter on the target point
+        if (g_cfg.aimbotShake)
+            px += ((rand() % 200) - 100) / 100.f * g_cfg.aimbotShakePx;
+
+        float dx = px - cx, dy = py - cy;
         float d = sqrtf(dx * dx + dy * dy);
-        if (d < bestD) { bestD = d; best = &p; }
+        if (d < bestD) { bestD = d; best = &p; tx = px; ty = py; }
     }
     if (!best) return;
 
-    float dx = (best->headX - cx) * g_cfg.aimbotSmooth;
-    float dy = (best->headY - cy) * g_cfg.aimbotSmooth;
+    float smooth = (g_cfg.aimbotSmoothing && g_cfg.aimbotSmoothStyle == 1) ? g_cfg.aimbotSmooth : 1.f;
+    float dx = (tx - cx) * smooth;
+    float dy = (ty - cy) * smooth;
     mouse_move((int)dx, (int)dy);
 }
 
@@ -420,8 +465,23 @@ static void DrawMenu()
             float sm = g_cfg.aimbotSmooth * 10.f;
             if (ImGui::SliderFloat("Smoothness", &sm, 1.f, 10.f, "%.0f"))
                 g_cfg.aimbotSmooth = sm / 10.f;
+            const char* styles[] = { "None", "Linear" };
+            ImGui::Combo("Smoothing style", &g_cfg.aimbotSmoothStyle, styles, 2);
+            ImGui::Checkbox("Enable smoothing", &g_cfg.aimbotSmoothing);
+            ImGui::Checkbox("Enable shake", &g_cfg.aimbotShake);
+            if (g_cfg.aimbotShake)
+                ImGui::SliderFloat("Shake px", &g_cfg.aimbotShakePx, 1.f, 20.f, "%.0f");
+            ImGui::Checkbox("Enable prediction", &g_cfg.aimbotPrediction);
+            if (g_cfg.aimbotPrediction)
+                ImGui::SliderFloat("Prediction (ms)", &g_cfg.aimbotPredMs, 0.f, 500.f, "%.0f");
             ImGui::SliderFloat("Range (studs)", &g_cfg.aimbotRange, 5.f, 30.f, "%.0f");
             ImGui::TextDisabled("Hold %s to aim", VkName(g_cfg.aimbotKey));
+            ImGui::Separator();
+            ImGui::Text("Checks");
+            ImGui::Checkbox("Team check", &g_cfg.aimbotTeamCheck);
+            ImGui::Checkbox("Knock check", &g_cfg.aimbotKnockCheck);
+            ImGui::Checkbox("Health check", &g_cfg.aimbotHealthCheck);
+            ImGui::Checkbox("Range check", &g_cfg.aimbotRangeCheck);
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("Triggerbot"))

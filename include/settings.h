@@ -19,6 +19,16 @@ struct Settings
     float aimbotFov = 120.f;     // px radius
     float aimbotSmooth = 0.25f;  // 0..1
     float aimbotRange = 30.f;    // studs
+    bool aimbotSmoothing = true;
+    int aimbotSmoothStyle = 1;   // 0 = None, 1 = Linear
+    bool aimbotShake = false;
+    float aimbotShakePx = 3.f;
+    bool aimbotPrediction = false;
+    float aimbotPredMs = 150.f;
+    bool aimbotTeamCheck = true;
+    bool aimbotKnockCheck = true;
+    bool aimbotHealthCheck = true;
+    bool aimbotRangeCheck = true;
 
     // triggerbot (hold key)
     bool triggerbotEnabled = true;
