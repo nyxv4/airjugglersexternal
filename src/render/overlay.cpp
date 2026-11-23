@@ -65,26 +65,68 @@ static bool g_localKnocked = false;
 static Vec2 g_localScreen;
 static float g_localX, g_localY; // screen center of roblox client
 
+// per-player cache: part/humanoid addresses only change on respawn,
+// so re-resolve them at ~2hz instead of enumerating children every frame
+struct CachedPlayer
+{
+    uintptr_t player = 0, character = 0;
+    uintptr_t head = 0, hrp = 0, humanoid = 0;
+    std::string name;
+    DWORD refreshAt = 0;
+};
+static std::unordered_map<uintptr_t, CachedPlayer> g_cache;
+
+static void RefreshPlayer(CachedPlayer& cp, const Instance& p)
+{
+    cp.player = p.addr;
+    cp.character = p.GetCharacter().addr;
+    cp.head = cp.hrp = cp.humanoid = 0;
+    cp.refreshAt = GetTickCount() + 500;
+
+    Instance ch(cp.character);
+    if (!ch) return;
+
+    for (auto& c : ch.GetChildren())
+    {
+        std::string cn = c.GetName();
+        if (cn == "Head") cp.head = c.addr;
+        else if (cn == "HumanoidRootPart") cp.hrp = c.addr;
+        else if (cn == "Torso" && !cp.hrp) cp.hrp = c.addr;
+        if (cp.humanoid == 0 && c.GetClassName() == "Humanoid") cp.humanoid = c.addr;
+    }
+    cp.name = p.GetName();
+}
+
+static Vec3 CachedLocalPos();
+
 static void CollectPlayers()
 {
     g_players.clear();
     auto& w = sdk::Get();
-    if (!w.localPlayer) return;
+    if (!w.localPlayer) { g_cache.clear(); return; }
 
-    uintptr_t localTeam = Instance(w.localPlayer).GetTeam();
-    Vec3 localPos = sdk::LocalPlayerPos();
+    uintptr_t localTeam = g_mem.ReadPtr(w.localPlayer + OFF("Player", "Team"));
+    Vec3 localPos = CachedLocalPos();
 
     // local knock state (FallingDown=0, Ragdoll=1, GettingUp=2)
     g_localKnocked = false;
     if (g_cfg.aimbotKnockCheck)
     {
+        static uintptr_t cachedChar = 0, cachedHum = 0;
+        static DWORD humRefresh = 0;
+        DWORD t = GetTickCount();
         auto lch = Instance(w.localPlayer).GetCharacter();
         if (lch)
         {
-            auto hum = lch.FindFirstChildOfClass("Humanoid");
-            if (hum)
+            if (lch.addr != cachedChar || t >= humRefresh || !cachedHum)
             {
-                int st = g_mem.Read<int>(hum.addr + OFF("Humanoid", "HumanoidStateID"));
+                cachedChar = lch.addr; humRefresh = t + 500; cachedHum = 0;
+                auto hum = lch.FindFirstChildOfClass("Humanoid");
+                cachedHum = hum.addr;
+            }
+            if (cachedHum)
+            {
+                int st = g_mem.Read<int>(cachedHum + OFF("Humanoid", "HumanoidStateID"));
                 g_localKnocked = (st >= 0 && st <= 2);
             }
         }
@@ -97,45 +139,37 @@ static void CollectPlayers()
     float rw = (float)(rc.right - rc.left), rh = (float)(rc.bottom - rc.top);
     g_localX = pt.x + rw / 2.f; g_localY = pt.y + rh / 2.f;
 
-    // name cache: reading names costs an RPM round-trip per player
-    static std::unordered_map<uintptr_t, std::string> nameCache;
+    DWORD now = GetTickCount();
+    std::unordered_set<uintptr_t> alive;
 
     for (auto& p : sdk::GetPlayers())
     {
         if (p.addr == w.localPlayer) continue;
-        auto ch = p.GetCharacter();
-        if (!ch) continue;
+        alive.insert(p.addr);
 
-        // enumerate character children ONCE, then look parts up by name
-        // (each FindFirstChild would re-enumerate = dozens of extra RPM calls)
-        static thread_local std::unordered_map<std::string, uintptr_t> partMap;
-        partMap.clear();
-        for (auto& c : ch.GetChildren())
-        {
-            std::string cn = c.GetName();
-            if (!cn.empty()) partMap[cn] = c.addr;
-        }
-        auto findPart = [&](const char* n) -> uintptr_t {
-            auto it = partMap.find(n); return it == partMap.end() ? 0 : it->second;
-        };
+        auto it = g_cache.find(p.addr);
+        if (it == g_cache.end()) { g_cache[p.addr] = CachedPlayer{}; it = g_cache.find(p.addr); }
+        CachedPlayer& cp = it->second;
 
-        uintptr_t headA = findPart("Head");
-        uintptr_t hrpA = findPart("HumanoidRootPart");
-        if (!hrpA) hrpA = findPart("Torso");
-        if (!headA || !hrpA) continue;
-        if (Instance::PartTransparency(headA) > 0.9f) continue;
+        // cheap check: did the character pointer change (respawn)?
+        uintptr_t curChar = g_mem.ReadPtr(p.addr + OFF("Player", "ModelInstance"));
+        if (cp.character != curChar || now >= cp.refreshAt || !cp.head || !cp.hrp)
+            RefreshPlayer(cp, p);
+        if (!cp.head || !cp.hrp) continue;
+
+        if (Instance::PartTransparency(cp.head) > 0.9f) continue;
 
         bool teammate = false;
         if (g_cfg.espTeamCheck || g_cfg.aimbotTeamCheck)
         {
-            uintptr_t t = p.GetTeam();
+            uintptr_t t = g_mem.ReadPtr(p.addr + OFF("Player", "Team"));
             teammate = (t != 0 && t == localTeam);
             if (teammate && !g_cfg.espShowTeammates && g_cfg.espTeamCheck) continue;
         }
 
-        Vec3 hp = Instance::PartPosition(headA); hp.y += 0.4f;
-        Vec3 fp = Instance::PartPosition(hrpA); fp.y -= 3.f;
-        Vec3 root = Instance::PartPosition(hrpA);
+        Vec3 hp = Instance::PartPosition(cp.head); hp.y += 0.4f;
+        Vec3 fp = Instance::PartPosition(cp.hrp); fp.y -= 3.f;
+        Vec3 root = Instance::PartPosition(cp.hrp);
 
         Vec2 hs, fs, rs;
         bool hok = sdk::WorldToScreen(hp, hs);
@@ -148,18 +182,20 @@ static void CollectPlayers()
         if (dist > 2000.f) continue; // esp distance cap; aimbot range handled separately
 
         PlayerBox pb{};
-        auto nit = nameCache.find(p.addr);
-        if (nit != nameCache.end()) pb.name = nit->second;
-        else { pb.name = p.GetName(); nameCache[p.addr] = pb.name; }
-        pb.headAddr = headA;
+        pb.name = cp.name;
+        pb.headAddr = cp.head;
         pb.headWorld = hp;
         {
-            uintptr_t hprim = g_mem.ReadPtr(headA + OFF("BasePart", "Primitive"));
+            uintptr_t hprim = g_mem.ReadPtr(cp.head + OFF("BasePart", "Primitive"));
             pb.headVel = hprim ? g_mem.Read<Vec3>(hprim + OFF("Primitive", "AssemblyLinearVelocity")) : Vec3{};
         }
         pb.dist = dist;
         pb.teammate = teammate;
-        pb.health = p.GetHealth(); pb.maxHealth = p.GetMaxHealth();
+        if (cp.humanoid)
+        {
+            pb.health = g_mem.Read<float>(cp.humanoid + OFF("Humanoid", "Health"));
+            pb.maxHealth = g_mem.Read<float>(cp.humanoid + OFF("Humanoid", "MaxHealth"));
+        }
 
         if (hok && fok)
         {
@@ -179,6 +215,38 @@ static void CollectPlayers()
         }
         g_players.push_back(pb);
     }
+
+    // drop cache entries for players who left
+    for (auto it = g_cache.begin(); it != g_cache.end();)
+        it = alive.count(it->first) ? std::next(it) : g_cache.erase(it);
+}
+
+// local HRP cached the same way - LocalPlayerPos() re-enumerates
+// character children every call which is the other big RPM cost
+static Vec3 CachedLocalPos()
+{
+    static uintptr_t cachedChar = 0, cachedHrp = 0;
+    static DWORD refreshAt = 0;
+    DWORD now = GetTickCount();
+    auto& w = sdk::Get();
+    if (!w.localPlayer) return {};
+
+    uintptr_t curChar = g_mem.ReadPtr(w.localPlayer + OFF("Player", "ModelInstance"));
+    if (curChar != cachedChar || now >= refreshAt || !cachedHrp)
+    {
+        cachedChar = curChar; refreshAt = now + 500; cachedHrp = 0;
+        if (curChar)
+        {
+            Instance ch(curChar);
+            for (auto& c : ch.GetChildren())
+            {
+                std::string cn = c.GetName();
+                if (cn == "HumanoidRootPart") { cachedHrp = c.addr; break; }
+                if (cn == "Torso") cachedHrp = c.addr;
+            }
+        }
+    }
+    return cachedHrp ? Instance::PartPosition(cachedHrp) : Vec3{};
 }
 
 static void DrawEsp(ImDrawList* dl)
@@ -737,6 +805,15 @@ void Overlay::Run()
         ctx->ClearRenderTargetView(rtv, clear);
         ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
         swapChain->Present(0, 0);
+
+        // cap overlay at ~120fps so the render thread doesn't pin a core
+        {
+            static auto lastFrame = std::chrono::steady_clock::now();
+            auto nowT = std::chrono::steady_clock::now();
+            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(nowT - lastFrame).count();
+            if (elapsed < 8) Sleep((DWORD)(8 - elapsed));
+            lastFrame = std::chrono::steady_clock::now();
+        }
 
         // idle throttle: nothing to draw and menu closed -> don't burn a core
         if (!focused && !g_cfg.menuVisible && !g_mem.IsAttached()) Sleep(8);

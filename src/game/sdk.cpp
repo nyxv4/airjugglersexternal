@@ -170,7 +170,17 @@ namespace sdk
         if (!GetClientRect(hwnd, &rc) || !ClientToScreen(hwnd, &pt)) return false;
         float rw = (float)(rc.right - rc.left), rh = (float)(rc.bottom - rc.top);
 
-        Matrix4 m = g_mem.Read<Matrix4>(w.visualEngine + OFF("VisualEngine", "ViewMatrix"));
+        // view matrix changes every frame; cache briefly to avoid an RPM
+        // round-trip on every call (ESP does several per player)
+        static Matrix4 view{};
+        static DWORD viewTick = 0;
+        DWORD now = GetTickCount();
+        if (now - viewTick > 8)
+        {
+            view = g_mem.Read<Matrix4>(w.visualEngine + OFF("VisualEngine", "ViewMatrix"));
+            viewTick = now;
+        }
+        Matrix4 m = view;
 
         float x = world.x * m.m[0] + world.y * m.m[1] + world.z * m.m[2] + m.m[3];
         float y = world.x * m.m[4] + world.y * m.m[5] + world.z * m.m[6] + m.m[7];
