@@ -32,8 +32,10 @@ void config::Load(const char* path)
     g_cfg.espSnaplines = get("esp_snaplines", "0") == "1";
     g_cfg.espTeamCheck = get("esp_teamcheck", "1") == "1";
     g_cfg.espShowTeammates = get("esp_teammates", "0") == "1";
+    g_cfg.espKit = get("esp_kit", "1") == "1";
     g_cfg.aimbotEnabled = get("aimbot_enabled", "1") == "1";
     g_cfg.aimbotKey = std::stoi(get("aimbot_key", "88"));
+    g_cfg.aimbotMode = std::stoi(get("aimbot_mode", "1"));
     g_cfg.aimbotFov = std::stof(get("aimbot_fov", "120"));
     g_cfg.aimbotSmooth = std::stof(get("aimbot_smooth", "0.25"));
     g_cfg.aimbotRange = std::stof(get("aimbot_range", "30"));
@@ -50,9 +52,11 @@ void config::Load(const char* path)
     g_cfg.aimbotRangeCheck = get("aimbot_rangecheck", "1") == "1";
     g_cfg.triggerbotEnabled = get("trigger_enabled", "1") == "1";
     g_cfg.triggerKey = std::stoi(get("trigger_key", "88"));
+    g_cfg.triggerMode = std::stoi(get("trigger_mode", "1"));
     g_cfg.triggerFov = std::stof(get("trigger_fov", "30"));
     g_cfg.hitboxEnabled = get("hitbox_enabled", "1") == "1";
     g_cfg.hitboxKey = std::stoi(get("hitbox_key", "67"));
+    g_cfg.hitboxMode = std::stoi(get("hitbox_mode", "2"));
     g_cfg.hitboxMult = std::stof(get("hitbox_mult", "2.5"));
     g_cfg.hitboxMaxStuds = std::stof(get("hitbox_max", "0"));
     g_cfg.streamproof = get("streamproof", "1") == "1";
@@ -69,8 +73,10 @@ void config::Save(const char* path)
     f << "esp_snaplines=" << g_cfg.espSnaplines << "\n";
     f << "esp_teamcheck=" << g_cfg.espTeamCheck << "\n";
     f << "esp_teammates=" << g_cfg.espShowTeammates << "\n";
+    f << "esp_kit=" << g_cfg.espKit << "\n";
     f << "aimbot_enabled=" << g_cfg.aimbotEnabled << "\n";
     f << "aimbot_key=" << g_cfg.aimbotKey << "\n";
+    f << "aimbot_mode=" << g_cfg.aimbotMode << "\n";
     f << "aimbot_fov=" << g_cfg.aimbotFov << "\n";
     f << "aimbot_smooth=" << g_cfg.aimbotSmooth << "\n";
     f << "aimbot_range=" << g_cfg.aimbotRange << "\n";
@@ -86,9 +92,11 @@ void config::Save(const char* path)
     f << "aimbot_rangecheck=" << g_cfg.aimbotRangeCheck << "\n";
     f << "trigger_enabled=" << g_cfg.triggerbotEnabled << "\n";
     f << "trigger_key=" << g_cfg.triggerKey << "\n";
+    f << "trigger_mode=" << g_cfg.triggerMode << "\n";
     f << "trigger_fov=" << g_cfg.triggerFov << "\n";
     f << "hitbox_enabled=" << g_cfg.hitboxEnabled << "\n";
     f << "hitbox_key=" << g_cfg.hitboxKey << "\n";
+    f << "hitbox_mode=" << g_cfg.hitboxMode << "\n";
     f << "hitbox_mult=" << g_cfg.hitboxMult << "\n";
     f << "hitbox_max=" << g_cfg.hitboxMaxStuds << "\n";
     f << "streamproof=" << g_cfg.streamproof << "\n";

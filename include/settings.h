@@ -12,6 +12,7 @@ struct Settings
     bool espSnaplines = false;
     bool espTeamCheck = true;
     bool espShowTeammates = false;
+    bool espKit = true;
 
     // aimbot (hold key)
     bool aimbotEnabled = true;
@@ -25,6 +26,8 @@ struct Settings
     float aimbotShakePx = 3.f;
     bool aimbotPrediction = false;
     float aimbotPredMs = 150.f;
+    // activation modes: 0 = hold key, 1 = toggle key, 2 = always on
+    int aimbotMode = 1;
     bool aimbotTeamCheck = true;
     bool aimbotKnockCheck = true;
     bool aimbotHealthCheck = true;
@@ -33,11 +36,13 @@ struct Settings
     // triggerbot (hold key)
     bool triggerbotEnabled = true;
     int triggerKey = 0x58;
+    int triggerMode = 1;
     float triggerFov = 30.f;
 
-    // hitbox expander (hold key)
+    // hitbox expander
     bool hitboxEnabled = true;
     int hitboxKey = 0x43;        // C
+    int hitboxMode = 2;          // scripts-style: on while enabled
     float hitboxMult = 2.5f;
     float hitboxMaxStuds = 0.f;  // 0 = uncapped (14.4 for bedwars)
 

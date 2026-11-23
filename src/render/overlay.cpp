@@ -18,6 +18,7 @@
 #include <mutex>
 #include <cstdarg>
 #include <cstdlib>
+#include <cctype>
 
 static void Log(const char* fmt, ...)
 {
@@ -58,12 +59,86 @@ struct PlayerBox
     float dist;
     bool teammate;
     uintptr_t headAddr;
+    std::string kit;
+    ImU32 kitCol = 0;
 };
 
 static std::vector<PlayerBox> g_players;
 static bool g_localKnocked = false;
 static Vec2 g_localScreen;
 static float g_localX, g_localY; // screen center of roblox client
+
+// ---------------- kit esp ----------------
+// bedwars kits + generic kit names; matched case-insensitively against
+// player/backpack/character child names (tools, values, folders)
+struct KitEntry { const char* key; const char* label; ImU32 col; };
+static const KitEntry kKits[] = {
+    // bedwars kits
+    { "void_knight", "VOID KNIGHT", IM_COL32(120, 90, 220, 255) },
+    { "voidknight", "VOID KNIGHT", IM_COL32(120, 90, 220, 255) },
+    { "block_kicker", "BLOCK KICKER", IM_COL32(200, 160, 60, 255) },
+    { "blockkicker", "BLOCK KICKER", IM_COL32(200, 160, 60, 255) },
+    { "elk_master", "ELK MASTER", IM_COL32(160, 110, 60, 255) },
+    { "elkmaster", "ELK MASTER", IM_COL32(160, 110, 60, 255) },
+    { "summoner", "SUMMONER", IM_COL32(90, 200, 120, 255) },
+    { "paladin", "PALADIN", IM_COL32(230, 200, 80, 255) },
+    { "davey", "DAVEY", IM_COL32(90, 140, 220, 255) },
+    { "airbender", "AIRBENDER", IM_COL32(120, 200, 230, 255) },
+    { "hatter", "HATTER", IM_COL32(140, 100, 160, 255) },
+    { "mage", "MAGE", IM_COL32(90, 120, 230, 255) },
+    { "archer", "ARCHER", IM_COL32(90, 170, 90, 255) },
+    { "assassin", "ASSASSIN", IM_COL32(60, 60, 70, 255) },
+    { "emerald", "EMERALD", IM_COL32(40, 200, 120, 255) },
+    { "fireball", "FIREBALL", IM_COL32(230, 90, 40, 255) },
+    { "pyromancer", "PYROMANCER", IM_COL32(230, 90, 40, 255) },
+    { "frosty", "FROSTY", IM_COL32(140, 200, 240, 255) },
+    { "gravity", "GRAVITY", IM_COL32(120, 120, 140, 255) },
+    { "healer", "HEALER", IM_COL32(240, 240, 240, 255) },
+    { "invis", "INVIS", IM_COL32(160, 160, 190, 255) },
+    { "knight", "KNIGHT", IM_COL32(170, 170, 190, 255) },
+    { "lucky", "LUCKY", IM_COL32(240, 210, 60, 255) },
+    { "mason", "MASON", IM_COL32(160, 120, 80, 255) },
+    { "shepard", "SHEPARD", IM_COL32(200, 140, 60, 255) },
+    { "smelly", "SMELLY", IM_COL32(150, 190, 80, 255) },
+    { "soapy", "SOAPY", IM_COL32(200, 220, 240, 255) },
+    { "spider", "SPIDER", IM_COL32(80, 60, 50, 255) },
+    { "tnt", "TNT", IM_COL32(220, 60, 40, 255) },
+    { "warrior", "WARRIOR", IM_COL32(200, 80, 60, 255) },
+    { "wizard", "WIZARD", IM_COL32(140, 100, 230, 255) },
+    // single/metal kits
+    { "metal", "METAL", IM_COL32(160, 160, 170, 255) },
+    { "elder", "ELDER", IM_COL32(170, 130, 230, 255) },
+    { "iron", "IRON", IM_COL32(190, 190, 200, 255) },
+    { "steel", "STEEL", IM_COL32(170, 180, 190, 255) },
+    { "bronze", "BRONZE", IM_COL32(200, 150, 90, 255) },
+    { "copper", "COPPER", IM_COL32(220, 140, 80, 255) },
+    { "silver", "SILVER", IM_COL32(220, 225, 235, 255) },
+    { "gold", "GOLD", IM_COL32(240, 200, 60, 255) },
+    { "diamond", "DIAMOND", IM_COL32(90, 200, 240, 255) },
+    { "ruby", "RUBY", IM_COL32(220, 40, 70, 255) },
+    { "sapphire", "SAPPHIRE", IM_COL32(50, 100, 230, 255) },
+    { "topaz", "TOPAZ", IM_COL32(240, 200, 90, 255) },
+    { "amethyst", "AMETHYST", IM_COL32(150, 80, 200, 255) },
+    { "quartz", "QUARTZ", IM_COL32(235, 235, 240, 255) },
+    { "jade", "JADE", IM_COL32(60, 190, 110, 255) },
+    { "onyx", "ONYX", IM_COL32(40, 40, 50, 255) },
+    { "pearl", "PEARL", IM_COL32(240, 235, 230, 255) },
+    { "opal", "OPAL", IM_COL32(200, 180, 240, 255) },
+    { "netherite", "NETHERITE", IM_COL32(70, 60, 60, 255) },
+};
+
+static const KitEntry* MatchKit(const std::string& lower)
+{
+    for (auto& k : kKits)
+        if (lower.find(k.key) != std::string::npos) return &k;
+    return nullptr;
+}
+
+static std::string ToLower(std::string s)
+{
+    for (auto& c : s) c = (char)tolower((unsigned char)c);
+    return s;
+}
 
 // per-player cache: part/humanoid addresses only change on respawn,
 // so re-resolve them at ~2hz instead of enumerating children every frame
@@ -72,6 +147,8 @@ struct CachedPlayer
     uintptr_t player = 0, character = 0;
     uintptr_t head = 0, hrp = 0, humanoid = 0;
     std::string name;
+    std::string kit;
+    ImU32 kitCol = 0;
     DWORD refreshAt = 0;
 };
 static std::unordered_map<uintptr_t, CachedPlayer> g_cache;
@@ -86,9 +163,24 @@ static void RefreshPlayer(CachedPlayer& cp, const Instance& p)
     Instance ch(cp.character);
     if (!ch) return;
 
+    cp.kit.clear();
+    auto tryKit = [&](const std::string& n) {
+        if (cp.kit.empty())
+            if (auto* k = MatchKit(ToLower(n))) { cp.kit = k->label; cp.kitCol = k->col; }
+    };
+
+    // player children (backpack, gui, values) then backpack contents then character
+    for (auto& c : p.GetChildren())
+    {
+        tryKit(c.GetName());
+        if (ToLower(c.GetName()).find("backpack") != std::string::npos)
+            for (auto& b : c.GetChildren()) tryKit(b.GetName());
+    }
+
     for (auto& c : ch.GetChildren())
     {
         std::string cn = c.GetName();
+        tryKit(cn);
         if (cn == "Head") cp.head = c.addr;
         else if (cn == "HumanoidRootPart") cp.hrp = c.addr;
         else if (cn == "Torso" && !cp.hrp) cp.hrp = c.addr;
@@ -191,6 +283,8 @@ static void CollectPlayers()
         }
         pb.dist = dist;
         pb.teammate = teammate;
+        pb.kit = cp.kit;
+        pb.kitCol = cp.kitCol;
         if (cp.humanoid)
         {
             pb.health = g_mem.Read<float>(cp.humanoid + OFF("Humanoid", "Health"));
@@ -268,6 +362,14 @@ static void DrawEsp(ImDrawList* dl)
             ImVec2 ts = ImGui::CalcTextSize(p.name.c_str());
             dl->AddText({ cx - ts.x / 2, p.y1 - ts.y - 2 }, c, p.name.c_str());
         }
+        if (g_cfg.espKit && !p.kit.empty())
+        {
+            char kbuf[48]; snprintf(kbuf, sizeof(kbuf), "[%s]", p.kit.c_str());
+            ImVec2 ts = ImGui::CalcTextSize(kbuf);
+            float ky = p.y1 - ts.y - 2;
+            if (g_cfg.espName && !p.name.empty()) ky -= ts.y + 1;
+            dl->AddText({ cx - ts.x / 2, ky }, p.kitCol, kbuf);
+        }
         if (g_cfg.espDistance)
         {
             char buf[32]; snprintf(buf, sizeof(buf), "%.0fm", p.dist);
@@ -307,6 +409,18 @@ static void mouse_click()
 }
 
 static bool key_down(int vk) { return (GetAsyncKeyState(vk) & 0x8000) != 0; }
+
+// activation: 0 = hold key, 1 = press key to toggle, 2 = always on
+static bool ActKey(int key, int mode, bool& toggled, bool& wasDown)
+{
+    bool down = key_down(key);
+    if (mode == 1 && down && !wasDown) toggled = !toggled;
+    wasDown = down;
+    if (mode == 2) return true;
+    return mode == 1 ? toggled : down;
+}
+
+static const char* const kActModes[] = { "Hold key", "Toggle key", "Always on" };
 
 // true when Roblox (or our own overlay, so the menu stays usable) is foreground
 static bool GameFocused()
@@ -349,7 +463,8 @@ static const char* VkName(int vk)
 static void RunAimbot()
 {
     if (!g_cfg.aimbotEnabled || !g_mem.IsAttached()) return;
-    if (!key_down(g_cfg.aimbotKey)) return;
+    static bool toggled = false, wasDown = false;
+    if (!ActKey(g_cfg.aimbotKey, g_cfg.aimbotMode, toggled, wasDown)) return;
     if (g_cfg.aimbotKnockCheck && g_localKnocked) return;
     if (g_players.empty()) return;
 
@@ -394,7 +509,8 @@ static void RunAimbot()
 static void RunTriggerbot()
 {
     if (!g_cfg.triggerbotEnabled || !g_mem.IsAttached()) return;
-    if (!key_down(g_cfg.triggerKey)) return;
+    static bool toggled = false, wasDown = false;
+    if (!ActKey(g_cfg.triggerKey, g_cfg.triggerMode, toggled, wasDown)) return;
 
     for (auto& p : g_players)
     {
@@ -427,7 +543,9 @@ static void RunHitbox()
     auto& originals = g_hitboxOriginals;
     static DWORD lastRun = 0;
 
-    bool held = g_cfg.hitboxEnabled && g_mem.IsAttached() && GameFocused() && key_down(g_cfg.hitboxKey);
+    static bool toggled = false, wasDown = false;
+    bool held = g_cfg.hitboxEnabled && g_mem.IsAttached() && GameFocused() &&
+        ActKey(g_cfg.hitboxKey, g_cfg.hitboxMode, toggled, wasDown);
     if (!held)
     {
         if (wasHeld) RestoreHitboxes();
@@ -477,7 +595,16 @@ static void RunHitbox()
                 if (ns.y > g_cfg.hitboxMaxStuds) ns.y = g_cfg.hitboxMaxStuds;
                 if (ns.z > g_cfg.hitboxMaxStuds) ns.z = g_cfg.hitboxMaxStuds;
             }
-            g_mem.Write<Vec3>(sizeAddr, ns);
+            static bool loggedWrite = false;
+            if (!loggedWrite)
+            {
+                loggedWrite = true;
+                Log("[nyx] hitbox write part=0x%llx prim=0x%llx size=(%.1f,%.1f,%.1f) -> (%.1f,%.1f,%.1f) ok=%d",
+                    (unsigned long long)it->second, (unsigned long long)prim,
+                    sz.x, sz.y, sz.z, ns.x, ns.y, ns.z,
+                    (int)g_mem.Write<Vec3>(sizeAddr, ns));
+            }
+            else g_mem.Write<Vec3>(sizeAddr, ns);
         }
     }
 }
@@ -543,7 +670,8 @@ static void DrawMenu()
             if (g_cfg.aimbotPrediction)
                 ImGui::SliderFloat("Prediction (ms)", &g_cfg.aimbotPredMs, 0.f, 500.f, "%.0f");
             ImGui::SliderFloat("Range (studs)", &g_cfg.aimbotRange, 5.f, 30.f, "%.0f");
-            ImGui::TextDisabled("Hold %s to aim", VkName(g_cfg.aimbotKey));
+            ImGui::Combo("Activation", &g_cfg.aimbotMode, kActModes, 3);
+            ImGui::TextDisabled("%s: %s", kActModes[g_cfg.aimbotMode], VkName(g_cfg.aimbotKey));
             ImGui::Separator();
             ImGui::Text("Checks");
             ImGui::Checkbox("Team check", &g_cfg.aimbotTeamCheck);
@@ -556,7 +684,8 @@ static void DrawMenu()
         {
             ImGui::Checkbox("Enabled", &g_cfg.triggerbotEnabled);
             ImGui::SliderFloat("FOV", &g_cfg.triggerFov, 5.f, 150.f, "%.0f px");
-            ImGui::TextDisabled("Hold X to fire when crosshair is on a target");
+            ImGui::Combo("Activation", &g_cfg.triggerMode, kActModes, 3);
+            ImGui::TextDisabled("%s: %s", kActModes[g_cfg.triggerMode], VkName(g_cfg.triggerKey));
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("Hitbox"))
@@ -564,7 +693,8 @@ static void DrawMenu()
             ImGui::Checkbox("Enabled", &g_cfg.hitboxEnabled);
             ImGui::SliderFloat("Multiplier", &g_cfg.hitboxMult, 1.f, 6.f, "%.1fx");
             ImGui::SliderFloat("Max studs (0=off)", &g_cfg.hitboxMaxStuds, 0.f, 30.f, "%.1f");
-            ImGui::TextDisabled("Hold C to expand enemy hitboxes");
+            ImGui::Combo("Activation", &g_cfg.hitboxMode, kActModes, 3);
+            ImGui::TextDisabled("%s: %s", kActModes[g_cfg.hitboxMode], VkName(g_cfg.hitboxKey));
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("Visuals"))
@@ -576,6 +706,7 @@ static void DrawMenu()
             ImGui::Checkbox("Snaplines", &g_cfg.espSnaplines);
             ImGui::Checkbox("Team check", &g_cfg.espTeamCheck);
             ImGui::Checkbox("Show teammates", &g_cfg.espShowTeammates);
+            ImGui::Checkbox("Kit ESP", &g_cfg.espKit);
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("Misc"))
