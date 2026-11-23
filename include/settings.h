@@ -33,8 +33,8 @@ struct Settings
 
     // misc
     bool streamproof = true;
-    bool menuVisible = true;
-    int menuKey = VK_INSERT;
+    bool menuVisible = false;
+    int menuKey = 0xA1;         // VK_RSHIFT
 };
 
 extern Settings g_cfg;

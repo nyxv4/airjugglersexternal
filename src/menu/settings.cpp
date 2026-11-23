@@ -45,7 +45,7 @@ void config::Load(const char* path)
     g_cfg.hitboxMult = std::stof(get("hitbox_mult", "2.5"));
     g_cfg.hitboxMaxStuds = std::stof(get("hitbox_max", "0"));
     g_cfg.streamproof = get("streamproof", "1") == "1";
-    g_cfg.menuKey = std::stoi(get("menu_key", "45"));
+    g_cfg.menuKey = std::stoi(get("menu_key", "161"));
 }
 
 void config::Save(const char* path)

@@ -11,6 +11,8 @@
 #include <atomic>
 #include <cmath>
 #include <cstdio>
+#include <unordered_map>
+#include <unordered_set>
 
 #define OFF(cls, field) offsets::Get(cls, field)
 #pragma comment(lib, "d3d11.lib")
@@ -56,17 +58,33 @@ static void CollectPlayers()
     float rw = (float)(rc.right - rc.left), rh = (float)(rc.bottom - rc.top);
     g_localX = pt.x + rw / 2.f; g_localY = pt.y + rh / 2.f;
 
+    // name cache: reading names costs an RPM round-trip per player
+    static std::unordered_map<uintptr_t, std::string> nameCache;
+
     for (auto& p : sdk::GetPlayers())
     {
         if (p.addr == w.localPlayer) continue;
         auto ch = p.GetCharacter();
         if (!ch) continue;
 
-        auto head = ch.FindFirstChild("Head");
-        auto hrp = ch.FindFirstChild("HumanoidRootPart");
-        if (!hrp) hrp = ch.FindFirstChild("Torso");
-        if (!head || !hrp) continue;
-        if (Instance::PartTransparency(head.addr) > 0.9f) continue;
+        // enumerate character children ONCE, then look parts up by name
+        // (each FindFirstChild would re-enumerate = dozens of extra RPM calls)
+        static thread_local std::unordered_map<std::string, uintptr_t> partMap;
+        partMap.clear();
+        for (auto& c : ch.GetChildren())
+        {
+            std::string cn = c.GetName();
+            if (!cn.empty()) partMap[cn] = c.addr;
+        }
+        auto findPart = [&](const char* n) -> uintptr_t {
+            auto it = partMap.find(n); return it == partMap.end() ? 0 : it->second;
+        };
+
+        uintptr_t headA = findPart("Head");
+        uintptr_t hrpA = findPart("HumanoidRootPart");
+        if (!hrpA) hrpA = findPart("Torso");
+        if (!headA || !hrpA) continue;
+        if (Instance::PartTransparency(headA) > 0.9f) continue;
 
         bool teammate = false;
         if (g_cfg.espTeamCheck)
@@ -76,9 +94,9 @@ static void CollectPlayers()
             if (teammate && !g_cfg.espShowTeammates) continue;
         }
 
-        Vec3 hp = Instance::PartPosition(head.addr); hp.y += 0.4f;
-        Vec3 fp = Instance::PartPosition(hrp.addr); fp.y -= 3.f;
-        Vec3 root = Instance::PartPosition(hrp.addr);
+        Vec3 hp = Instance::PartPosition(headA); hp.y += 0.4f;
+        Vec3 fp = Instance::PartPosition(hrpA); fp.y -= 3.f;
+        Vec3 root = Instance::PartPosition(hrpA);
 
         Vec2 hs, fs, rs;
         bool hok = sdk::WorldToScreen(hp, hs);
@@ -91,8 +109,10 @@ static void CollectPlayers()
         if (dist > g_cfg.aimbotRange) continue;
 
         PlayerBox pb{};
-        pb.name = p.GetName();
-        pb.headAddr = head.addr;
+        auto nit = nameCache.find(p.addr);
+        if (nit != nameCache.end()) pb.name = nit->second;
+        else { pb.name = p.GetName(); nameCache[p.addr] = pb.name; }
+        pb.headAddr = headA;
         pb.dist = dist;
         pb.teammate = teammate;
         pb.health = p.GetHealth(); pb.maxHealth = p.GetMaxHealth();
@@ -176,6 +196,42 @@ static void mouse_click()
 
 static bool key_down(int vk) { return (GetAsyncKeyState(vk) & 0x8000) != 0; }
 
+// true when Roblox (or our own overlay, so the menu stays usable) is foreground
+static bool GameFocused()
+{
+    HWND fg = GetForegroundWindow();
+    if (!fg) return false;
+    if (fg == g_overlay.hwnd) return true;
+    DWORD pid = 0;
+    GetWindowThreadProcessId(fg, &pid);
+    return pid != 0 && pid == g_mem.pid;
+}
+
+static const char* VkName(int vk)
+{
+    switch (vk)
+    {
+    case VK_LSHIFT: return "LSHIFT"; case VK_RSHIFT: return "RSHIFT";
+    case VK_LCONTROL: return "LCTRL"; case VK_RCONTROL: return "RCTRL";
+    case VK_LMENU: return "LALT"; case VK_RMENU: return "RALT";
+    case VK_INSERT: return "INSERT"; case VK_DELETE: return "DELETE";
+    case VK_HOME: return "HOME"; case VK_END: return "END";
+    case VK_PRIOR: return "PGUP"; case VK_NEXT: return "PGDN";
+    case VK_F1: return "F1"; case VK_F2: return "F2"; case VK_F3: return "F3";
+    case VK_F4: return "F4"; case VK_F5: return "F5"; case VK_F6: return "F6";
+    case VK_F7: return "F7"; case VK_F8: return "F8"; case VK_F9: return "F9";
+    case VK_F10: return "F10"; case VK_F11: return "F11"; case VK_F12: return "F12";
+    case VK_SPACE: return "SPACE"; case VK_TAB: return "TAB";
+    case VK_RETURN: return "ENTER"; case VK_BACK: return "BACKSPACE";
+    case VK_ESCAPE: return "ESC"; case VK_CAPITAL: return "CAPS";
+    }
+    if (vk >= 'A' && vk <= 'Z') { static char b[2]; b[0] = (char)vk; b[1] = 0; return b; }
+    if (vk >= '0' && vk <= '9') { static char b[2]; b[0] = (char)vk; b[1] = 0; return b; }
+    if (vk >= VK_NUMPAD0 && vk <= VK_NUMPAD9) { static char b[8]; snprintf(b, 8, "NUM%d", vk - VK_NUMPAD0); return b; }
+    if (vk >= VK_F13 && vk <= VK_F24) { static char b[8]; snprintf(b, 8, "F%d", vk - VK_F13 + 13); return b; }
+    static char b[16]; snprintf(b, 16, "VK%02X", vk); return b;
+}
+
 // ---------------- aimbot / triggerbot / hitbox ----------------
 
 static void RunAimbot()
@@ -224,20 +280,29 @@ static void RunHitbox()
 {
     static bool wasHeld = false;
     static std::vector<std::pair<uintptr_t, Vec3>> originals;
+    static DWORD lastRun = 0;
 
-    bool held = g_cfg.hitboxEnabled && g_mem.IsAttached() && key_down(g_cfg.hitboxKey);
+    bool held = g_cfg.hitboxEnabled && g_mem.IsAttached() && GameFocused() && key_down(g_cfg.hitboxKey);
     if (!held)
     {
         if (wasHeld)
         {
             for (auto& [addr, sz] : originals)
-                g_mem.Write<Vec3>(g_mem.ReadPtr(addr + OFF("BasePart", "Primitive")) + OFF("Primitive", "Size"), sz);
+            {
+                uintptr_t prim = g_mem.ReadPtr(addr + OFF("BasePart", "Primitive"));
+                if (prim) g_mem.Write<Vec3>(prim + OFF("Primitive", "Size"), sz);
+            }
             originals.clear();
         }
         wasHeld = false;
         return;
     }
     wasHeld = true;
+
+    // ~15hz is plenty; this does many RPM calls per player
+    DWORD now = GetTickCount();
+    if (now - lastRun < 66) return;
+    lastRun = now;
 
     auto w = sdk::Get();
     if (!w.localPlayer) return;
@@ -248,17 +313,25 @@ static void RunHitbox()
         if (pl.addr == w.localPlayer) continue;
         auto ch = pl.GetCharacter();
         if (!ch) continue;
+
+        std::unordered_map<std::string, uintptr_t> partMap;
+        for (auto& c : ch.GetChildren())
+        {
+            std::string cn = c.GetName();
+            if (!cn.empty()) partMap[cn] = c.addr;
+        }
+
         for (auto pn : parts)
         {
-            auto part = ch.FindFirstChild(pn);
-            if (!part) continue;
-            uintptr_t prim = g_mem.ReadPtr(part.addr + OFF("BasePart", "Primitive"));
+            auto it = partMap.find(pn);
+            if (it == partMap.end()) continue;
+            uintptr_t prim = g_mem.ReadPtr(it->second + OFF("BasePart", "Primitive"));
             if (!prim) continue;
             uintptr_t sizeAddr = prim + OFF("Primitive", "Size");
             Vec3 sz = g_mem.Read<Vec3>(sizeAddr);
             bool found = false;
-            for (auto& o : originals) if (o.first == part.addr) { found = true; break; }
-            if (!found) originals.push_back({ part.addr, sz });
+            for (auto& o : originals) if (o.first == it->second) { found = true; break; }
+            if (!found) originals.push_back({ it->second, sz });
 
             Vec3 ns{ sz.x * g_cfg.hitboxMult, sz.y * g_cfg.hitboxMult, sz.z * g_cfg.hitboxMult };
             if (g_cfg.hitboxMaxStuds > 0.f)
@@ -270,6 +343,41 @@ static void RunHitbox()
             g_mem.Write<Vec3>(sizeAddr, ns);
         }
     }
+}
+
+// ---------------- key rebind ----------------
+
+static int* g_rebindTarget = nullptr;
+
+static void RebindButton(const char* label, int* target)
+{
+    char buf[64];
+    if (g_rebindTarget == target)
+        snprintf(buf, sizeof(buf), "%s: press a key...", label);
+    else
+        snprintf(buf, sizeof(buf), "%s: %s", label, VkName(*target));
+
+    if (ImGui::Button(buf, { 180, 0 }))
+        g_rebindTarget = (g_rebindTarget == target) ? nullptr : target;
+}
+
+// returns true the first frame a key is pressed while rebinding
+static bool PollRebind()
+{
+    if (!g_rebindTarget) return false;
+    for (int vk = 1; vk < 255; vk++)
+    {
+        if (vk == VK_LBUTTON || vk == VK_RBUTTON) continue;
+        if (key_down(vk))
+        {
+            if (vk == VK_ESCAPE) { g_rebindTarget = nullptr; return true; }
+            *g_rebindTarget = vk;
+            g_rebindTarget = nullptr;
+            config::Save();
+            return true;
+        }
+    }
+    return false;
 }
 
 // ---------------- menu ----------------
@@ -320,6 +428,13 @@ static void DrawMenu()
         {
             ImGui::Checkbox("Streamproof", &g_cfg.streamproof);
             if (g_cfg.streamproof) g_overlay.ApplyStreamproof();
+            ImGui::Separator();
+            ImGui::Text("Keybinds");
+            RebindButton("Menu", &g_cfg.menuKey);
+            RebindButton("Aimbot", &g_cfg.aimbotKey);
+            RebindButton("Triggerbot", &g_cfg.triggerKey);
+            RebindButton("Hitbox", &g_cfg.hitboxKey);
+            ImGui::TextDisabled("INSERT still toggles this menu");
             ImGui::Text("Roblox PID: %lu", g_mem.pid);
             ImGui::Text("Base: 0x%llx", (unsigned long long)g_mem.base);
             ImGui::Text("Offsets: %s", offsets::Ready() ? offsets::ClientVersion().c_str() : "fetching...");
@@ -436,15 +551,21 @@ void Overlay::Run()
 
         if (key_down(VK_END)) { g_running = false; break; }
 
-        // menu toggle
-        static bool prevMenuKey = false;
-        bool menuKey = key_down(g_cfg.menuKey);
-        if (menuKey && !prevMenuKey)
+        bool focused = GameFocused();
+
+        // key rebind capture (menu must be open to click the button anyway)
+        PollRebind();
+
+        // menu toggle — only while Roblox (or this overlay) is focused
+        static bool prevMenuKey = false, prevIns = false;
+        bool menuKey = focused && key_down(g_cfg.menuKey);
+        bool insKey = focused && key_down(VK_INSERT);
+        if ((menuKey && !prevMenuKey) || (insKey && !prevIns))
         {
             g_cfg.menuVisible = !g_cfg.menuVisible;
             SetClickThrough(!g_cfg.menuVisible);
         }
-        prevMenuKey = menuKey;
+        prevMenuKey = menuKey; prevIns = insKey;
 
         // auto-attach
         static DWORD lastTry = 0;
@@ -460,19 +581,27 @@ void Overlay::Run()
             static DWORD lastResolve = 0;
             if (GetTickCount() - lastResolve > 1500) { lastResolve = GetTickCount(); sdk::Resolve(); }
             static DWORD lastCollect = 0;
-            if (GetTickCount() - lastCollect > 8) { lastCollect = GetTickCount(); CollectPlayers(); }
+            // only burn RPM calls while Roblox is actually focused
+            if (focused && GetTickCount() - lastCollect > 16) { lastCollect = GetTickCount(); CollectPlayers(); }
+        }
+        else if (!g_mem.IsAttached())
+        {
+            g_players.clear();
         }
 
-        RunAimbot();
-        RunTriggerbot();
-        RunHitbox();
+        if (focused)
+        {
+            RunAimbot();
+            RunTriggerbot();
+            RunHitbox();
+        }
 
         ImGui_ImplDX11_NewFrame();
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
 
         ImDrawList* bg = ImGui::GetBackgroundDrawList();
-        if (g_mem.IsAttached()) DrawEsp(bg);
+        if (g_mem.IsAttached() && focused) DrawEsp(bg);
         if (g_cfg.menuVisible) DrawMenu();
 
         ImGui::Render();
@@ -481,6 +610,9 @@ void Overlay::Run()
         ctx->ClearRenderTargetView(rtv, clear);
         ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
         swapChain->Present(0, 0);
+
+        // idle throttle: nothing to draw and menu closed -> don't burn a core
+        if (!focused && !g_cfg.menuVisible && !g_mem.IsAttached()) Sleep(8);
     }
 }
 
