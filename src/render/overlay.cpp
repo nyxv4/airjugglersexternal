@@ -13,6 +13,26 @@
 #include <cstdio>
 #include <unordered_map>
 #include <unordered_set>
+#include <fstream>
+#include <chrono>
+#include <mutex>
+#include <cstdarg>
+
+static void Log(const char* fmt, ...)
+{
+    static std::mutex logMtx;
+    std::lock_guard<std::mutex> lk(logMtx);
+    std::ofstream f("nyx_debug.log", std::ios::app);
+    auto now = std::chrono::system_clock::now();
+    auto t = std::chrono::system_clock::to_time_t(now);
+    tm lt{}; localtime_s(&lt, &t);
+    char tb[32]; strftime(tb, sizeof(tb), "%H:%M:%S", &lt);
+    f << "[" << tb << "] ";
+    va_list ap; va_start(ap, fmt);
+    char buf[512]; vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+    f << buf << "\n";
+}
 
 #define OFF(cls, field) offsets::Get(cls, field)
 #pragma comment(lib, "d3d11.lib")
@@ -584,9 +604,20 @@ void Overlay::Run()
         if (!g_mem.IsAttached() && GetTickCount() - lastTry > 1000)
         {
             lastTry = GetTickCount();
-            if (!offsets::Ready()) offsets::Fetch();
+            if (!offsets::Ready())
+            {
+                bool ok = offsets::Fetch();
+                Log("[nyx] offsets fetch: %s (%zu classes)", ok ? "ok" : "FAILED", 0);
+            }
             if (g_mem.Attach(L"RobloxPlayerBeta.exe") || g_mem.Attach(L"RobloxPlayer.exe"))
-                sdk::Resolve();
+            {
+                Log("[nyx] attached pid=%lu base=0x%llx", g_mem.pid, (unsigned long long)g_mem.base);
+                bool r = sdk::Resolve();
+                auto& w = sdk::Get();
+                Log("[nyx] resolve=%d ve=0x%llx dm=0x%llx ws=0x%llx pl=0x%llx lp=0x%llx",
+                    (int)r, (unsigned long long)w.visualEngine, (unsigned long long)w.dataModel,
+                    (unsigned long long)w.workspace, (unsigned long long)w.players, (unsigned long long)w.localPlayer);
+            }
         }
         else if (g_mem.IsAttached())
         {
@@ -595,6 +626,30 @@ void Overlay::Run()
             static DWORD lastCollect = 0;
             // only burn RPM calls while Roblox is actually focused
             if (focused && GetTickCount() - lastCollect > 16) { lastCollect = GetTickCount(); CollectPlayers(); }
+
+            static DWORD lastStat = 0;
+            static bool loggedNames = false;
+            if (!loggedNames && sdk::Get().localPlayer)
+            {
+                loggedNames = true;
+                Instance lp(sdk::Get().localPlayer);
+                Log("[nyx] localplayer name='%s' class='%s'", lp.GetName().c_str(), lp.GetClassName().c_str());
+                auto ch = lp.GetCharacter();
+                if (ch)
+                {
+                    Log("[nyx] character class='%s' children=%zu", ch.GetClassName().c_str(), ch.GetChildren().size());
+                    for (auto& c : ch.GetChildren())
+                        Log("[nyx]   child '%s' (%s)", c.GetName().c_str(), c.GetClassName().c_str());
+                }
+                else Log("[nyx] no character yet");
+            }
+            if (GetTickCount() - lastStat > 5000)
+            {
+                lastStat = GetTickCount();
+                Log("[nyx] players=%zu local=0x%llx esp=%zu focused=%d",
+                    sdk::GetPlayers().size(), (unsigned long long)sdk::Get().localPlayer,
+                    g_players.size(), (int)focused);
+            }
         }
         else if (!g_mem.IsAttached())
         {

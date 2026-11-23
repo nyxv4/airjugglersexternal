@@ -1,0 +1,10 @@
+[14:32:38] [nyx] offsets fetch: ok (0 classes)
+[14:32:38] [nyx] attached pid=9196 base=0x7ff66f5e0000
+[14:32:38] [nyx] resolve=1 ve=0x26086b700d0 dm=0x260811ef2c0 ws=0x26080ecc0d0 pl=0x26085db0cd0 lp=0x2608dc848d0
+[14:32:38] [nyx] localplayer name='NeoGotzJokez' class='Player'
+[14:32:38] [nyx] no character yet
+[14:32:38] [nyx] players=1 local=0x2608dc848d0 esp=0 focused=0
+[14:32:43] [nyx] players=1 local=0x2608dc848d0 esp=0 focused=0
+[14:32:48] [nyx] players=1 local=0x2608dc848d0 esp=0 focused=0
+[14:32:53] [nyx] players=1 local=0x2608dc848d0 esp=0 focused=0
+[14:32:58] [nyx] players=1 local=0x2608dc848d0 esp=0 focused=0

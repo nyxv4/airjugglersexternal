@@ -77,6 +77,7 @@ std::string Memory::ReadRobloxString(uintptr_t address) const
     SIZE_T got = 0;
     ReadProcessMemory(hProcess, (LPCVOID)ptr, out.data(), len, &got);
     out.resize(got);
-    while (!out.empty() && out.back() == 0) out.pop_back();
+    auto nul = out.find('\0');
+    if (nul != std::string::npos) out.resize(nul);
     return out;
 }

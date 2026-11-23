@@ -5,12 +5,33 @@
 
 #define OFF(cls, field) offsets::Get(cls, field)
 
+static bool printable(const std::string& s)
+{
+    if (s.empty() || s.size() > 64) return false;
+    for (char c : s) if (c < 32 || c > 126) return false;
+    return true;
+}
+
 std::string Instance::GetName() const
 {
     if (!valid()) return "";
+    // verified layout: NameContainer holds a pointer to the name string object
+    std::string s;
+    uintptr_t nc = OFF("Instance", "NameContainer");
+    if (nc)
+    {
+        uintptr_t nameObj = g_mem.ReadPtr(addr + nc);
+        if (nameObj)
+        {
+            s = g_mem.ReadRobloxString(nameObj);
+            if (printable(s)) return s;
+        }
+    }
+    s = g_mem.ReadRobloxString(addr + OFF("Instance", "Name"));
+    if (printable(s)) return s;
     uintptr_t namePtr = g_mem.ReadPtr(addr + OFF("Instance", "Name"));
-    if (namePtr == 0) return "";
-    return g_mem.ReadRobloxString(namePtr);
+    if (namePtr) { s = g_mem.ReadRobloxString(namePtr); if (printable(s)) return s; }
+    return "";
 }
 
 std::string Instance::GetClassName() const
@@ -18,9 +39,11 @@ std::string Instance::GetClassName() const
     if (!valid()) return "";
     uintptr_t classDesc = g_mem.ReadPtr(addr + OFF("Instance", "ClassDescriptor"));
     if (classDesc == 0) return "";
+    std::string s = g_mem.ReadRobloxString(classDesc + OFF("Instance", "ClassName"));
+    if (printable(s)) return s;
     uintptr_t namePtr = g_mem.ReadPtr(classDesc + OFF("Instance", "ClassName"));
-    if (namePtr == 0) return "";
-    return g_mem.ReadRobloxString(namePtr);
+    if (namePtr) { s = g_mem.ReadRobloxString(namePtr); if (printable(s)) return s; }
+    return "";
 }
 
 std::vector<Instance> Instance::GetChildren() const
@@ -92,8 +115,8 @@ Vec3 Instance::PartSize(uintptr_t part)
 
 float Instance::PartTransparency(uintptr_t part)
 {
-    uintptr_t prim = PartPrimitive(part);
-    return prim ? g_mem.Read<float>(prim + OFF("Primitive", "Transparency")) : 1.f;
+    // Transparency lives on the BasePart itself, not the Primitive
+    return part ? g_mem.Read<float>(part + OFF("BasePart", "Transparency")) : 1.f;
 }
 
 // ---------------- sdk ----------------

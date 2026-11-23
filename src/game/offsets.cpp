@@ -38,10 +38,8 @@ namespace offsets
         std::lock_guard<std::mutex> lock(mtx);
         if (ready) return true;
 
-        // latest dump first; versioned URL needs the client version string which
-        // we don't have yet, so the fallback (current) dump is the reliable path.
-        std::string data = http::Get("https://imtheo.lol/Offsets/Offsets.cs");
-        if (data.empty()) data = http::Get("https://imtheo.lol/Offsets/Offsets.cs");
+        // theo's dumper moved to offsets.imtheo.lol (the old host 308-redirects)
+        std::string data = http::Get("https://offsets.imtheo.lol/Offsets.cs");
         if (data.empty()) return false;
 
         parse(data);
