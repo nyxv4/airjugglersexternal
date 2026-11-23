@@ -50,6 +50,10 @@ struct Settings
     bool streamproof = true;
     bool menuVisible = false;
     int menuKey = 0xA1;         // VK_RSHIFT
+
+    // ui
+    int uiTheme = 0;            // 0=midnight 1=incognito 2=neon 3=light
+    float accent[3] = { 0.35f, 0.75f, 1.0f };
 };
 
 extern Settings g_cfg;

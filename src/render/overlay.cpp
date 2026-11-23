@@ -646,8 +646,122 @@ static bool PollRebind()
 
 // ---------------- menu ----------------
 
+static void ApplyTheme()
+{
+    ImGui::StyleColorsDark();
+    ImGuiStyle& s = ImGui::GetStyle();
+    ImVec4* c = s.Colors;
+    ImVec4 acc(g_cfg.accent[0], g_cfg.accent[1], g_cfg.accent[2], 1.f);
+
+    s.WindowRounding = 6.f; s.FrameRounding = 4.f;
+    s.WindowPadding = { 10, 10 }; s.FramePadding = { 8, 4 };
+    s.ItemSpacing = { 8, 6 }; s.ScrollbarSize = 12.f;
+
+    switch (g_cfg.uiTheme)
+    {
+    case 1: // incognito: flat black, white text, accent highlights
+        c[ImGuiCol_WindowBg] = { 0.03f, 0.03f, 0.03f, 0.97f };
+        c[ImGuiCol_ChildBg] = { 0.05f, 0.05f, 0.05f, 1.f };
+        c[ImGuiCol_Border] = { 0.15f, 0.15f, 0.15f, 1.f };
+        c[ImGuiCol_FrameBg] = { 0.09f, 0.09f, 0.09f, 1.f };
+        c[ImGuiCol_FrameBgHovered] = { 0.13f, 0.13f, 0.13f, 1.f };
+        c[ImGuiCol_FrameBgActive] = { 0.16f, 0.16f, 0.16f, 1.f };
+        c[ImGuiCol_Button] = { 0.10f, 0.10f, 0.10f, 1.f };
+        c[ImGuiCol_ButtonHovered] = acc;
+        c[ImGuiCol_ButtonActive] = { acc.x * 0.75f, acc.y * 0.75f, acc.z * 0.75f, 1.f };
+        c[ImGuiCol_CheckMark] = acc;
+        c[ImGuiCol_SliderGrab] = acc;
+        c[ImGuiCol_SliderGrabActive] = { acc.x * 0.8f, acc.y * 0.8f, acc.z * 0.8f, 1.f };
+        c[ImGuiCol_Tab] = { 0.05f, 0.05f, 0.05f, 1.f };
+        c[ImGuiCol_TabHovered] = { 0.14f, 0.14f, 0.14f, 1.f };
+        c[ImGuiCol_TabSelected] = { 0.09f, 0.09f, 0.09f, 1.f };
+        c[ImGuiCol_Header] = acc;
+        c[ImGuiCol_HeaderHovered] = { acc.x * 0.85f, acc.y * 0.85f, acc.z * 0.85f, 1.f };
+        c[ImGuiCol_ScrollbarGrab] = { 0.2f, 0.2f, 0.2f, 1.f };
+        break;
+
+    case 2: // neon: dark purple, glowing accent
+        c[ImGuiCol_WindowBg] = { 0.07f, 0.04f, 0.12f, 0.97f };
+        c[ImGuiCol_ChildBg] = { 0.09f, 0.05f, 0.16f, 1.f };
+        c[ImGuiCol_Border] = { acc.x * 0.5f, acc.y * 0.5f, acc.z * 0.5f, 1.f };
+        c[ImGuiCol_FrameBg] = { 0.12f, 0.07f, 0.22f, 1.f };
+        c[ImGuiCol_FrameBgHovered] = { acc.x * 0.4f, acc.y * 0.4f, acc.z * 0.4f, 1.f };
+        c[ImGuiCol_FrameBgActive] = { acc.x * 0.55f, acc.y * 0.55f, acc.z * 0.55f, 1.f };
+        c[ImGuiCol_Button] = { 0.14f, 0.08f, 0.25f, 1.f };
+        c[ImGuiCol_ButtonHovered] = acc;
+        c[ImGuiCol_ButtonActive] = { acc.x * 0.8f, acc.y * 0.8f, acc.z * 0.8f, 1.f };
+        c[ImGuiCol_CheckMark] = acc;
+        c[ImGuiCol_SliderGrab] = acc;
+        c[ImGuiCol_SliderGrabActive] = { acc.x, acc.y, acc.z, 1.f };
+        c[ImGuiCol_Tab] = { 0.10f, 0.06f, 0.18f, 1.f };
+        c[ImGuiCol_TabHovered] = acc;
+        c[ImGuiCol_TabSelected] = { acc.x * 0.35f, acc.y * 0.35f, acc.z * 0.35f, 1.f };
+        c[ImGuiCol_Header] = acc;
+        c[ImGuiCol_HeaderHovered] = { acc.x * 0.85f, acc.y * 0.85f, acc.z * 0.85f, 1.f };
+        c[ImGuiCol_Text] = { 0.92f, 0.90f, 1.0f, 1.f };
+        c[ImGuiCol_ScrollbarGrab] = { acc.x * 0.4f, acc.y * 0.4f, acc.z * 0.4f, 1.f };
+        break;
+
+    case 3: // light: clean bright theme
+        c[ImGuiCol_WindowBg] = { 0.94f, 0.94f, 0.96f, 0.97f };
+        c[ImGuiCol_ChildBg] = { 0.97f, 0.97f, 0.98f, 1.f };
+        c[ImGuiCol_Border] = { 0.75f, 0.75f, 0.78f, 1.f };
+        c[ImGuiCol_FrameBg] = { 1.f, 1.f, 1.f, 1.f };
+        c[ImGuiCol_FrameBgHovered] = { 0.90f, 0.93f, 0.97f, 1.f };
+        c[ImGuiCol_FrameBgActive] = { 0.85f, 0.90f, 0.96f, 1.f };
+        c[ImGuiCol_Button] = { 0.88f, 0.89f, 0.91f, 1.f };
+        c[ImGuiCol_ButtonHovered] = acc;
+        c[ImGuiCol_ButtonActive] = { acc.x * 0.8f, acc.y * 0.8f, acc.z * 0.8f, 1.f };
+        c[ImGuiCol_CheckMark] = acc;
+        c[ImGuiCol_SliderGrab] = acc;
+        c[ImGuiCol_SliderGrabActive] = { acc.x * 0.8f, acc.y * 0.8f, acc.z * 0.8f, 1.f };
+        c[ImGuiCol_Tab] = { 0.87f, 0.88f, 0.90f, 1.f };
+        c[ImGuiCol_TabHovered] = acc;
+        c[ImGuiCol_TabSelected] = { 0.80f, 0.86f, 0.94f, 1.f };
+        c[ImGuiCol_Header] = acc;
+        c[ImGuiCol_HeaderHovered] = { acc.x * 0.85f, acc.y * 0.85f, acc.z * 0.85f, 1.f };
+        c[ImGuiCol_Text] = { 0.10f, 0.10f, 0.12f, 1.f };
+        c[ImGuiCol_TextDisabled] = { 0.45f, 0.45f, 0.48f, 1.f };
+        c[ImGuiCol_ScrollbarGrab] = { 0.70f, 0.72f, 0.75f, 1.f };
+        break;
+
+    default: // 0 midnight: dark blue-grey, cyan accent
+        c[ImGuiCol_WindowBg] = { 0.06f, 0.07f, 0.10f, 0.96f };
+        c[ImGuiCol_ChildBg] = { 0.08f, 0.09f, 0.13f, 1.f };
+        c[ImGuiCol_Border] = { 0.16f, 0.20f, 0.28f, 1.f };
+        c[ImGuiCol_FrameBg] = { 0.10f, 0.12f, 0.17f, 1.f };
+        c[ImGuiCol_FrameBgHovered] = { 0.14f, 0.18f, 0.25f, 1.f };
+        c[ImGuiCol_FrameBgActive] = { 0.18f, 0.23f, 0.32f, 1.f };
+        c[ImGuiCol_Button] = { 0.12f, 0.15f, 0.21f, 1.f };
+        c[ImGuiCol_ButtonHovered] = acc;
+        c[ImGuiCol_ButtonActive] = { acc.x * 0.8f, acc.y * 0.8f, acc.z * 0.8f, 1.f };
+        c[ImGuiCol_CheckMark] = acc;
+        c[ImGuiCol_SliderGrab] = acc;
+        c[ImGuiCol_SliderGrabActive] = { acc.x, acc.y, acc.z, 1.f };
+        c[ImGuiCol_Tab] = { 0.08f, 0.10f, 0.14f, 1.f };
+        c[ImGuiCol_TabHovered] = acc;
+        c[ImGuiCol_TabSelected] = { acc.x * 0.35f, acc.y * 0.35f, acc.z * 0.35f, 1.f };
+        c[ImGuiCol_Header] = acc;
+        c[ImGuiCol_HeaderHovered] = { acc.x * 0.85f, acc.y * 0.85f, acc.z * 0.85f, 1.f };
+        c[ImGuiCol_ScrollbarGrab] = { 0.20f, 0.25f, 0.35f, 1.f };
+        break;
+    }
+}
+
 static void DrawMenu()
 {
+    // live theme switching
+    static int lastTheme = -1;
+    static float lastAcc[3] = { -1, -1, -1 };
+    if (lastTheme != g_cfg.uiTheme ||
+        lastAcc[0] != g_cfg.accent[0] || lastAcc[1] != g_cfg.accent[1] || lastAcc[2] != g_cfg.accent[2])
+    {
+        lastTheme = g_cfg.uiTheme;
+        lastAcc[0] = g_cfg.accent[0]; lastAcc[1] = g_cfg.accent[1]; lastAcc[2] = g_cfg.accent[2];
+        ApplyTheme();
+        config::Save();
+    }
+
     ImGui::SetNextWindowSize({ 520, 480 }, ImGuiCond_FirstUseEver);
     if (!ImGui::Begin("NYX", nullptr, ImGuiWindowFlags_NoCollapse)) { ImGui::End(); return; }
 
@@ -714,6 +828,10 @@ static void DrawMenu()
             ImGui::Checkbox("Streamproof", &g_cfg.streamproof);
             if (g_cfg.streamproof) g_overlay.ApplyStreamproof();
             ImGui::Separator();
+            ImGui::Text("Interface");
+            const char* themes[] = { "Midnight", "Incognito", "Neon", "Light" };
+            if (ImGui::Combo("Theme", &g_cfg.uiTheme, themes, 4)) config::Save();
+            ImGui::ColorEdit3("Accent", g_cfg.accent, ImGuiColorEditFlags_NoInputs);
             ImGui::Text("Keybinds");
             RebindButton("Menu", &g_cfg.menuKey);
             RebindButton("Aimbot", &g_cfg.aimbotKey);
@@ -807,6 +925,7 @@ bool Overlay::Create(HINSTANCE inst)
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGui::StyleColorsDark();
+    ApplyTheme();
     ImGui_ImplWin32_Init(hwnd);
     ImGui_ImplDX11_Init(device, ctx);
     return true;
