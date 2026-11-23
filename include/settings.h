@@ -18,7 +18,7 @@ struct Settings
     int aimbotKey = 0x58;        // X
     float aimbotFov = 120.f;     // px radius
     float aimbotSmooth = 0.25f;  // 0..1
-    float aimbotRange = 1000.f;  // studs
+    float aimbotRange = 30.f;    // studs
 
     // triggerbot (hold key)
     bool triggerbotEnabled = true;

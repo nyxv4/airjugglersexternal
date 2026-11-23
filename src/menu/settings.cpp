@@ -36,7 +36,8 @@ void config::Load(const char* path)
     g_cfg.aimbotKey = std::stoi(get("aimbot_key", "88"));
     g_cfg.aimbotFov = std::stof(get("aimbot_fov", "120"));
     g_cfg.aimbotSmooth = std::stof(get("aimbot_smooth", "0.25"));
-    g_cfg.aimbotRange = std::stof(get("aimbot_range", "1000"));
+    g_cfg.aimbotRange = std::stof(get("aimbot_range", "30"));
+    if (g_cfg.aimbotRange > 30.f) g_cfg.aimbotRange = 30.f;
     g_cfg.triggerbotEnabled = get("trigger_enabled", "1") == "1";
     g_cfg.triggerKey = std::stoi(get("trigger_key", "88"));
     g_cfg.triggerFov = std::stof(get("trigger_fov", "30"));
