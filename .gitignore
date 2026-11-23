@@ -5,3 +5,5 @@ x64/
 *.suo
 .vs/
 config/nyx.cfg
+nyx_debug.log
+imgui.ini
