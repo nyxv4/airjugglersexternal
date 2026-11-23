@@ -106,7 +106,7 @@ static void CollectPlayers()
 
         float dist = sqrtf((localPos.x - root.x) * (localPos.x - root.x) +
                            (localPos.z - root.z) * (localPos.z - root.z));
-        if (dist > g_cfg.aimbotRange) continue;
+        if (dist > 2000.f) continue; // esp distance cap; aimbot range handled separately
 
         PlayerBox pb{};
         auto nit = nameCache.find(p.addr);
@@ -246,7 +246,7 @@ static void RunAimbot()
 
     for (auto& p : g_players)
     {
-        if (p.teammate) continue;
+        if (p.teammate || p.dist > g_cfg.aimbotRange) continue;
         float dx = p.headX - cx, dy = p.headY - cy;
         float d = sqrtf(dx * dx + dy * dy);
         if (d < bestD) { bestD = d; best = &p; }
@@ -389,13 +389,15 @@ static void DrawMenu()
 
     if (ImGui::BeginTabBar("tabs"))
     {
-        if (ImGui::BeginTabItem("Aimbot"))
+        if (ImGui::BeginTabItem("Aim Assist"))
         {
             ImGui::Checkbox("Enabled", &g_cfg.aimbotEnabled);
-            ImGui::SliderFloat("FOV", &g_cfg.aimbotFov, 10.f, 500.f, "%.0f px");
-            ImGui::SliderFloat("Smoothness", &g_cfg.aimbotSmooth, 0.05f, 1.f, "%.2f");
-            ImGui::SliderFloat("Range", &g_cfg.aimbotRange, 50.f, 3000.f, "%.0f studs");
-            ImGui::TextDisabled("Hold X (key %d) to aim", g_cfg.aimbotKey);
+            ImGui::SliderFloat("ANGLE", &g_cfg.aimbotFov, 10.f, 500.f, "%.0f px");
+            float sm = g_cfg.aimbotSmooth * 10.f;
+            if (ImGui::SliderFloat("Smoothness", &sm, 1.f, 10.f, "%.0f"))
+                g_cfg.aimbotSmooth = sm / 10.f;
+            ImGui::SliderFloat("Range (studs)", &g_cfg.aimbotRange, 5.f, 30.f, "%.0f");
+            ImGui::TextDisabled("Hold %s to aim", VkName(g_cfg.aimbotKey));
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("Triggerbot"))
