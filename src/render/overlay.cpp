@@ -276,24 +276,28 @@ static void RunTriggerbot()
     }
 }
 
+static std::vector<std::pair<uintptr_t, Vec3>> g_hitboxOriginals;
+
+static void RestoreHitboxes()
+{
+    for (auto& [addr, sz] : g_hitboxOriginals)
+    {
+        uintptr_t prim = g_mem.ReadPtr(addr + OFF("BasePart", "Primitive"));
+        if (prim) g_mem.Write<Vec3>(prim + OFF("Primitive", "Size"), sz);
+    }
+    g_hitboxOriginals.clear();
+}
+
 static void RunHitbox()
 {
     static bool wasHeld = false;
-    static std::vector<std::pair<uintptr_t, Vec3>> originals;
+    auto& originals = g_hitboxOriginals;
     static DWORD lastRun = 0;
 
     bool held = g_cfg.hitboxEnabled && g_mem.IsAttached() && GameFocused() && key_down(g_cfg.hitboxKey);
     if (!held)
     {
-        if (wasHeld)
-        {
-            for (auto& [addr, sz] : originals)
-            {
-                uintptr_t prim = g_mem.ReadPtr(addr + OFF("BasePart", "Primitive"));
-                if (prim) g_mem.Write<Vec3>(prim + OFF("Primitive", "Size"), sz);
-            }
-            originals.clear();
-        }
+        if (wasHeld) RestoreHitboxes();
         wasHeld = false;
         return;
     }
@@ -440,6 +444,12 @@ static void DrawMenu()
             ImGui::Text("Roblox PID: %lu", g_mem.pid);
             ImGui::Text("Base: 0x%llx", (unsigned long long)g_mem.base);
             ImGui::Text("Offsets: %s", offsets::Ready() ? offsets::ClientVersion().c_str() : "fetching...");
+            ImGui::Separator();
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.1f, 0.1f, 1.f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.8f, 0.15f, 0.15f, 1.f));
+            if (ImGui::Button("DESTROY / UNLOAD", { -1, 30 }))
+                g_running = false;
+            ImGui::PopStyleColor(2);
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();
@@ -616,6 +626,9 @@ void Overlay::Run()
         // idle throttle: nothing to draw and menu closed -> don't burn a core
         if (!focused && !g_cfg.menuVisible && !g_mem.IsAttached()) Sleep(8);
     }
+
+    RestoreHitboxes();
+    g_mem.Detach();
 }
 
 void Overlay::Shutdown()
