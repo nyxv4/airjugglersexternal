@@ -814,10 +814,18 @@ bool Overlay::Create(HINSTANCE inst)
 
 void Overlay::ApplyStreamproof()
 {
+    if (!hwnd) return;
+    BOOL ok;
     if (g_cfg.streamproof)
-        SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE);
+        ok = SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE);
     else
-        SetWindowDisplayAffinity(hwnd, WDA_NONE);
+        ok = SetWindowDisplayAffinity(hwnd, WDA_NONE);
+    static bool logged = false;
+    if (!logged)
+    {
+        logged = true;
+        Log("[nyx] streamproof=%d affinity_ok=%d err=%lu", (int)g_cfg.streamproof, (int)ok, GetLastError());
+    }
 }
 
 void Overlay::SetClickThrough(bool clickThrough)
@@ -841,6 +849,15 @@ void Overlay::Run()
         if (!g_running) break;
 
         if (key_down(VK_END)) { g_running = false; break; }
+
+        // re-assert streamproof periodically - some capture/driver
+        // combos reset the affinity and it never retries otherwise
+        static DWORD lastAffinity = 0;
+        if (g_cfg.streamproof && GetTickCount() - lastAffinity > 2000)
+        {
+            lastAffinity = GetTickCount();
+            SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE);
+        }
 
         bool focused = GameFocused();
 
