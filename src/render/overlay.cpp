@@ -748,6 +748,90 @@ static void ApplyTheme()
     }
 }
 
+static void MenuAim()
+{
+    ImGui::Checkbox("Enabled", &g_cfg.aimbotEnabled);
+    ImGui::SliderFloat("ANGLE", &g_cfg.aimbotFov, 10.f, 500.f, "%.0f px");
+    float sm = g_cfg.aimbotSmooth * 10.f;
+    if (ImGui::SliderFloat("Smoothness", &sm, 1.f, 10.f, "%.0f"))
+        g_cfg.aimbotSmooth = sm / 10.f;
+    const char* styles[] = { "None", "Linear" };
+    ImGui::Combo("Smoothing style", &g_cfg.aimbotSmoothStyle, styles, 2);
+    ImGui::Checkbox("Enable smoothing", &g_cfg.aimbotSmoothing);
+    ImGui::Checkbox("Enable shake", &g_cfg.aimbotShake);
+    if (g_cfg.aimbotShake)
+        ImGui::SliderFloat("Shake px", &g_cfg.aimbotShakePx, 1.f, 20.f, "%.0f");
+    ImGui::Checkbox("Enable prediction", &g_cfg.aimbotPrediction);
+    if (g_cfg.aimbotPrediction)
+        ImGui::SliderFloat("Prediction (ms)", &g_cfg.aimbotPredMs, 0.f, 500.f, "%.0f");
+    ImGui::SliderFloat("Range (studs)", &g_cfg.aimbotRange, 5.f, 30.f, "%.0f");
+    ImGui::Combo("Activation", &g_cfg.aimbotMode, kActModes, 3);
+    ImGui::TextDisabled("%s: %s", kActModes[g_cfg.aimbotMode], VkName(g_cfg.aimbotKey));
+    ImGui::Separator();
+    ImGui::Text("Checks");
+    ImGui::Checkbox("Team check", &g_cfg.aimbotTeamCheck);
+    ImGui::Checkbox("Knock check", &g_cfg.aimbotKnockCheck);
+    ImGui::Checkbox("Health check", &g_cfg.aimbotHealthCheck);
+    ImGui::Checkbox("Range check", &g_cfg.aimbotRangeCheck);
+}
+
+static void MenuTrigger()
+{
+    ImGui::Checkbox("Enabled", &g_cfg.triggerbotEnabled);
+    ImGui::SliderFloat("FOV", &g_cfg.triggerFov, 5.f, 150.f, "%.0f px");
+    ImGui::Combo("Activation", &g_cfg.triggerMode, kActModes, 3);
+    ImGui::TextDisabled("%s: %s", kActModes[g_cfg.triggerMode], VkName(g_cfg.triggerKey));
+}
+
+static void MenuHitbox()
+{
+    ImGui::Checkbox("Enabled", &g_cfg.hitboxEnabled);
+    ImGui::SliderFloat("Multiplier", &g_cfg.hitboxMult, 1.f, 6.f, "%.1fx");
+    ImGui::SliderFloat("Max studs (0=off)", &g_cfg.hitboxMaxStuds, 0.f, 30.f, "%.1f");
+    ImGui::Combo("Activation", &g_cfg.hitboxMode, kActModes, 3);
+    ImGui::TextDisabled("%s: %s", kActModes[g_cfg.hitboxMode], VkName(g_cfg.hitboxKey));
+}
+
+static void MenuVisuals()
+{
+    ImGui::Checkbox("Box ESP", &g_cfg.espBox);
+    ImGui::Checkbox("Name ESP", &g_cfg.espName);
+    ImGui::Checkbox("Distance ESP", &g_cfg.espDistance);
+    ImGui::Checkbox("Health bar", &g_cfg.espHealth);
+    ImGui::Checkbox("Snaplines", &g_cfg.espSnaplines);
+    ImGui::Checkbox("Team check", &g_cfg.espTeamCheck);
+    ImGui::Checkbox("Show teammates", &g_cfg.espShowTeammates);
+    ImGui::Checkbox("Kit ESP", &g_cfg.espKit);
+}
+
+static void MenuMisc()
+{
+    ImGui::Checkbox("Streamproof", &g_cfg.streamproof);
+    if (g_cfg.streamproof) g_overlay.ApplyStreamproof();
+    ImGui::Separator();
+    ImGui::Text("Interface");
+    const char* themes[] = { "Midnight", "Incognito", "Neon", "Light" };
+    if (ImGui::Combo("Theme", &g_cfg.uiTheme, themes, 4)) config::Save();
+    const char* layouts[] = { "Tabs", "Sidebar" };
+    if (ImGui::Combo("Layout", &g_cfg.uiLayout, layouts, 2)) config::Save();
+    ImGui::ColorEdit3("Accent", g_cfg.accent, ImGuiColorEditFlags_NoInputs);
+    ImGui::Text("Keybinds");
+    RebindButton("Menu", &g_cfg.menuKey);
+    RebindButton("Aimbot", &g_cfg.aimbotKey);
+    RebindButton("Triggerbot", &g_cfg.triggerKey);
+    RebindButton("Hitbox", &g_cfg.hitboxKey);
+    ImGui::TextDisabled("INSERT still toggles this menu");
+    ImGui::Text("Roblox PID: %lu", g_mem.pid);
+    ImGui::Text("Base: 0x%llx", (unsigned long long)g_mem.base);
+    ImGui::Text("Offsets: %s", offsets::Ready() ? offsets::ClientVersion().c_str() : "fetching...");
+    ImGui::Separator();
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.1f, 0.1f, 1.f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.8f, 0.15f, 0.15f, 1.f));
+    if (ImGui::Button("DESTROY / UNLOAD", { -1, 30 }))
+        g_running = false;
+    ImGui::PopStyleColor(2);
+}
+
 static void DrawMenu()
 {
     // live theme switching
@@ -762,94 +846,49 @@ static void DrawMenu()
         config::Save();
     }
 
-    ImGui::SetNextWindowSize({ 520, 480 }, ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize({ 560, 480 }, ImGuiCond_FirstUseEver);
     if (!ImGui::Begin("NYX", nullptr, ImGuiWindowFlags_NoCollapse)) { ImGui::End(); return; }
 
-    if (ImGui::BeginTabBar("tabs"))
+    if (g_cfg.uiLayout == 1)
     {
-        if (ImGui::BeginTabItem("Aim Assist"))
+        // ---- sidebar layout ----
+        static int section = 0;
+        ImGui::BeginChild("##sidebar", { 110, 0 }, true);
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+        const char* names[] = { "AIM ASSIST", "TRIGGERBOT", "HITBOX", "VISUALS", "MISC" };
+        for (int i = 0; i < 5; i++)
         {
-            ImGui::Checkbox("Enabled", &g_cfg.aimbotEnabled);
-            ImGui::SliderFloat("ANGLE", &g_cfg.aimbotFov, 10.f, 500.f, "%.0f px");
-            float sm = g_cfg.aimbotSmooth * 10.f;
-            if (ImGui::SliderFloat("Smoothness", &sm, 1.f, 10.f, "%.0f"))
-                g_cfg.aimbotSmooth = sm / 10.f;
-            const char* styles[] = { "None", "Linear" };
-            ImGui::Combo("Smoothing style", &g_cfg.aimbotSmoothStyle, styles, 2);
-            ImGui::Checkbox("Enable smoothing", &g_cfg.aimbotSmoothing);
-            ImGui::Checkbox("Enable shake", &g_cfg.aimbotShake);
-            if (g_cfg.aimbotShake)
-                ImGui::SliderFloat("Shake px", &g_cfg.aimbotShakePx, 1.f, 20.f, "%.0f");
-            ImGui::Checkbox("Enable prediction", &g_cfg.aimbotPrediction);
-            if (g_cfg.aimbotPrediction)
-                ImGui::SliderFloat("Prediction (ms)", &g_cfg.aimbotPredMs, 0.f, 500.f, "%.0f");
-            ImGui::SliderFloat("Range (studs)", &g_cfg.aimbotRange, 5.f, 30.f, "%.0f");
-            ImGui::Combo("Activation", &g_cfg.aimbotMode, kActModes, 3);
-            ImGui::TextDisabled("%s: %s", kActModes[g_cfg.aimbotMode], VkName(g_cfg.aimbotKey));
-            ImGui::Separator();
-            ImGui::Text("Checks");
-            ImGui::Checkbox("Team check", &g_cfg.aimbotTeamCheck);
-            ImGui::Checkbox("Knock check", &g_cfg.aimbotKnockCheck);
-            ImGui::Checkbox("Health check", &g_cfg.aimbotHealthCheck);
-            ImGui::Checkbox("Range check", &g_cfg.aimbotRangeCheck);
-            ImGui::EndTabItem();
+            if (section == i)
+                ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_CheckMark]);
+            if (ImGui::Button(names[i], { -1, 34 })) section = i;
+            if (section == i) ImGui::PopStyleColor();
         }
-        if (ImGui::BeginTabItem("Triggerbot"))
+        ImGui::PopStyleColor();
+        ImGui::EndChild();
+        ImGui::SameLine();
+        ImGui::BeginChild("##content", { 0, 0 }, true);
+        switch (section)
         {
-            ImGui::Checkbox("Enabled", &g_cfg.triggerbotEnabled);
-            ImGui::SliderFloat("FOV", &g_cfg.triggerFov, 5.f, 150.f, "%.0f px");
-            ImGui::Combo("Activation", &g_cfg.triggerMode, kActModes, 3);
-            ImGui::TextDisabled("%s: %s", kActModes[g_cfg.triggerMode], VkName(g_cfg.triggerKey));
-            ImGui::EndTabItem();
+        case 0: MenuAim(); break;
+        case 1: MenuTrigger(); break;
+        case 2: MenuHitbox(); break;
+        case 3: MenuVisuals(); break;
+        case 4: MenuMisc(); break;
         }
-        if (ImGui::BeginTabItem("Hitbox"))
+        ImGui::EndChild();
+    }
+    else
+    {
+        // ---- classic tab layout ----
+        if (ImGui::BeginTabBar("tabs"))
         {
-            ImGui::Checkbox("Enabled", &g_cfg.hitboxEnabled);
-            ImGui::SliderFloat("Multiplier", &g_cfg.hitboxMult, 1.f, 6.f, "%.1fx");
-            ImGui::SliderFloat("Max studs (0=off)", &g_cfg.hitboxMaxStuds, 0.f, 30.f, "%.1f");
-            ImGui::Combo("Activation", &g_cfg.hitboxMode, kActModes, 3);
-            ImGui::TextDisabled("%s: %s", kActModes[g_cfg.hitboxMode], VkName(g_cfg.hitboxKey));
-            ImGui::EndTabItem();
+            if (ImGui::BeginTabItem("Aim Assist")) { MenuAim(); ImGui::EndTabItem(); }
+            if (ImGui::BeginTabItem("Triggerbot")) { MenuTrigger(); ImGui::EndTabItem(); }
+            if (ImGui::BeginTabItem("Hitbox")) { MenuHitbox(); ImGui::EndTabItem(); }
+            if (ImGui::BeginTabItem("Visuals")) { MenuVisuals(); ImGui::EndTabItem(); }
+            if (ImGui::BeginTabItem("Misc")) { MenuMisc(); ImGui::EndTabItem(); }
+            ImGui::EndTabBar();
         }
-        if (ImGui::BeginTabItem("Visuals"))
-        {
-            ImGui::Checkbox("Box ESP", &g_cfg.espBox);
-            ImGui::Checkbox("Name ESP", &g_cfg.espName);
-            ImGui::Checkbox("Distance ESP", &g_cfg.espDistance);
-            ImGui::Checkbox("Health bar", &g_cfg.espHealth);
-            ImGui::Checkbox("Snaplines", &g_cfg.espSnaplines);
-            ImGui::Checkbox("Team check", &g_cfg.espTeamCheck);
-            ImGui::Checkbox("Show teammates", &g_cfg.espShowTeammates);
-            ImGui::Checkbox("Kit ESP", &g_cfg.espKit);
-            ImGui::EndTabItem();
-        }
-        if (ImGui::BeginTabItem("Misc"))
-        {
-            ImGui::Checkbox("Streamproof", &g_cfg.streamproof);
-            if (g_cfg.streamproof) g_overlay.ApplyStreamproof();
-            ImGui::Separator();
-            ImGui::Text("Interface");
-            const char* themes[] = { "Midnight", "Incognito", "Neon", "Light" };
-            if (ImGui::Combo("Theme", &g_cfg.uiTheme, themes, 4)) config::Save();
-            ImGui::ColorEdit3("Accent", g_cfg.accent, ImGuiColorEditFlags_NoInputs);
-            ImGui::Text("Keybinds");
-            RebindButton("Menu", &g_cfg.menuKey);
-            RebindButton("Aimbot", &g_cfg.aimbotKey);
-            RebindButton("Triggerbot", &g_cfg.triggerKey);
-            RebindButton("Hitbox", &g_cfg.hitboxKey);
-            ImGui::TextDisabled("INSERT still toggles this menu");
-            ImGui::Text("Roblox PID: %lu", g_mem.pid);
-            ImGui::Text("Base: 0x%llx", (unsigned long long)g_mem.base);
-            ImGui::Text("Offsets: %s", offsets::Ready() ? offsets::ClientVersion().c_str() : "fetching...");
-            ImGui::Separator();
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.1f, 0.1f, 1.f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.8f, 0.15f, 0.15f, 1.f));
-            if (ImGui::Button("DESTROY / UNLOAD", { -1, 30 }))
-                g_running = false;
-            ImGui::PopStyleColor(2);
-            ImGui::EndTabItem();
-        }
-        ImGui::EndTabBar();
     }
     ImGui::End();
 }

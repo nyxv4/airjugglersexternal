@@ -62,6 +62,7 @@ void config::Load(const char* path)
     g_cfg.streamproof = get("streamproof", "1") == "1";
     g_cfg.menuKey = std::stoi(get("menu_key", "161"));
     g_cfg.uiTheme = std::stoi(get("ui_theme", "0"));
+    g_cfg.uiLayout = std::stoi(get("ui_layout", "0"));
     g_cfg.accent[0] = std::stof(get("accent_r", "0.35"));
     g_cfg.accent[1] = std::stof(get("accent_g", "0.75"));
     g_cfg.accent[2] = std::stof(get("accent_b", "1.0"));
@@ -106,6 +107,7 @@ void config::Save(const char* path)
     f << "streamproof=" << g_cfg.streamproof << "\n";
     f << "menu_key=" << g_cfg.menuKey << "\n";
     f << "ui_theme=" << g_cfg.uiTheme << "\n";
+    f << "ui_layout=" << g_cfg.uiLayout << "\n";
     f << "accent_r=" << g_cfg.accent[0] << "\n";
     f << "accent_g=" << g_cfg.accent[1] << "\n";
     f << "accent_b=" << g_cfg.accent[2] << "\n";

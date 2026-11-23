@@ -53,6 +53,7 @@ struct Settings
 
     // ui
     int uiTheme = 0;            // 0=midnight 1=incognito 2=neon 3=light
+    int uiLayout = 0;           // 0=tabs 1=sidebar
     float accent[3] = { 0.35f, 0.75f, 1.0f };
 };
 
