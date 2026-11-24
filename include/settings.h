@@ -46,6 +46,10 @@ struct Settings
     float hitboxMult = 2.5f;
     float hitboxMaxStuds = 0.f;  // 0 = uncapped (14.4 for bedwars)
 
+    // reach (tool handle resize)
+    bool reachEnabled = false;
+    float reachStuds = 1.f;
+
     // misc
     bool streamproof = true;
     bool menuVisible = false;
@@ -59,7 +63,7 @@ struct Settings
 
 extern Settings g_cfg;
 
-inline const char* NYX_VERSION = "13";
+inline const char* NYX_VERSION = "14";
 
 namespace config
 {

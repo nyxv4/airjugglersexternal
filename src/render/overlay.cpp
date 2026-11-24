@@ -65,6 +65,7 @@ struct PlayerBox
 
 static std::vector<PlayerBox> g_players;
 static bool g_localKnocked = false;
+static bool g_aimbotHadTarget = false;
 static Vec2 g_localScreen;
 static float g_localX, g_localY; // screen center of roblox client
 
@@ -146,6 +147,8 @@ struct CachedPlayer
 {
     uintptr_t player = 0, character = 0;
     uintptr_t head = 0, hrp = 0, humanoid = 0;
+    uintptr_t torso = 0, upperTorso = 0, lowerTorso = 0;
+    uintptr_t team = 0;
     std::string name;
     std::string kit;
     ImU32 kitCol = 0;
@@ -158,6 +161,8 @@ static void RefreshPlayer(CachedPlayer& cp, const Instance& p)
     cp.player = p.addr;
     cp.character = p.GetCharacter().addr;
     cp.head = cp.hrp = cp.humanoid = 0;
+    cp.torso = cp.upperTorso = cp.lowerTorso = 0;
+    cp.team = g_mem.ReadPtr(p.addr + OFF("Player", "Team"));
     cp.refreshAt = GetTickCount() + 500;
 
     Instance ch(cp.character);
@@ -183,7 +188,9 @@ static void RefreshPlayer(CachedPlayer& cp, const Instance& p)
         tryKit(cn);
         if (cn == "Head") cp.head = c.addr;
         else if (cn == "HumanoidRootPart") cp.hrp = c.addr;
-        else if (cn == "Torso" && !cp.hrp) cp.hrp = c.addr;
+        else if (cn == "Torso") { cp.hrp = cp.hrp ? cp.hrp : c.addr; cp.torso = c.addr; }
+        else if (cn == "UpperTorso") cp.upperTorso = c.addr;
+        else if (cn == "LowerTorso") cp.lowerTorso = c.addr;
         if (cp.humanoid == 0 && c.GetClassName() == "Humanoid") cp.humanoid = c.addr;
     }
     cp.name = p.GetName();
@@ -498,7 +505,16 @@ static void RunAimbot()
         float d = sqrtf(dx * dx + dy * dy);
         if (d < bestD) { bestD = d; best = &p; tx = px; ty = py; }
     }
-    if (!best) return;
+    if (!best) { g_aimbotHadTarget = false; return; }
+
+    // throttled diagnostic so we can verify it acquires + moves
+    static DWORD lastAimLog = 0;
+    if (GetTickCount() - lastAimLog > 2000)
+    {
+        lastAimLog = GetTickCount();
+        Log("[nyx] aimbot target='%s' dist=%.0fpx players=%zu", best->name.c_str(), bestD, g_players.size());
+    }
+    g_aimbotHadTarget = true;
 
     float smooth = (g_cfg.aimbotSmoothing && g_cfg.aimbotSmoothStyle == 1) ? g_cfg.aimbotSmooth : 1.f;
     float dx = (tx - cx) * smooth;
@@ -525,24 +541,38 @@ static void RunTriggerbot()
     }
 }
 
-static std::vector<std::pair<uintptr_t, Vec3>> g_hitboxOriginals;
+// hitbox: cached primitive addrs + original sizes; we always write
+// orig*mult (never re-multiply the live size - that was the stutter bug)
+struct HitboxEntry { uintptr_t prim; Vec3 orig; Vec3 expected; };
+static std::unordered_map<uintptr_t, HitboxEntry> g_hitboxMap;
+static std::vector<uintptr_t> g_hitboxParts;
+static DWORD g_hitboxScanAt = 0;
+
+static Vec3 HitboxExpected(const Vec3& orig)
+{
+    Vec3 ns{ orig.x * g_cfg.hitboxMult, orig.y * g_cfg.hitboxMult, orig.z * g_cfg.hitboxMult };
+    if (g_cfg.hitboxMaxStuds > 0.f)
+    {
+        if (ns.x > g_cfg.hitboxMaxStuds) ns.x = g_cfg.hitboxMaxStuds;
+        if (ns.y > g_cfg.hitboxMaxStuds) ns.y = g_cfg.hitboxMaxStuds;
+        if (ns.z > g_cfg.hitboxMaxStuds) ns.z = g_cfg.hitboxMaxStuds;
+    }
+    return ns;
+}
 
 static void RestoreHitboxes()
 {
-    for (auto& [addr, sz] : g_hitboxOriginals)
+    for (auto& [part, e] : g_hitboxMap)
     {
-        uintptr_t prim = g_mem.ReadPtr(addr + OFF("BasePart", "Primitive"));
-        if (prim) g_mem.Write<Vec3>(prim + OFF("Primitive", "Size"), sz);
+        if (e.prim) g_mem.Write<Vec3>(e.prim + OFF("Primitive", "Size"), e.orig);
     }
-    g_hitboxOriginals.clear();
+    g_hitboxMap.clear();
+    g_hitboxParts.clear();
 }
 
 static void RunHitbox()
 {
     static bool wasHeld = false;
-    auto& originals = g_hitboxOriginals;
-    static DWORD lastRun = 0;
-
     static bool toggled = false, wasDown = false;
     bool held = g_cfg.hitboxEnabled && g_mem.IsAttached() && GameFocused() &&
         ActKey(g_cfg.hitboxKey, g_cfg.hitboxMode, toggled, wasDown);
@@ -554,59 +584,127 @@ static void RunHitbox()
     }
     wasHeld = true;
 
-    // ~15hz is plenty; this does many RPM calls per player
     DWORD now = GetTickCount();
-    if (now - lastRun < 66) return;
-    lastRun = now;
-
-    auto w = sdk::Get();
+    auto& w = sdk::Get();
     if (!w.localPlayer) return;
-    static const char* parts[] = { "Head", "HumanoidRootPart", "Torso", "UpperTorso", "LowerTorso" };
+    uintptr_t localTeam = g_mem.ReadPtr(w.localPlayer + OFF("Player", "Team"));
 
-    for (auto& pl : sdk::GetPlayers())
+    // rescan the part list ~2hz using the player cache (cheap)
+    if (now >= g_hitboxScanAt)
     {
-        if (pl.addr == w.localPlayer) continue;
-        auto ch = pl.GetCharacter();
-        if (!ch) continue;
-
-        std::unordered_map<std::string, uintptr_t> partMap;
-        for (auto& c : ch.GetChildren())
+        g_hitboxScanAt = now + 500;
+        g_hitboxParts.clear();
+        std::unordered_set<uintptr_t> seen;
+        for (auto& [paddr, cp] : g_cache)
         {
-            std::string cn = c.GetName();
-            if (!cn.empty()) partMap[cn] = c.addr;
+            if (cp.character == 0) continue;
+            if (localTeam && cp.team == localTeam) continue; // don't expand teammates
+            uintptr_t parts[5] = { cp.head, cp.hrp, cp.torso, cp.upperTorso, cp.lowerTorso };
+            for (uintptr_t pa : parts)
+                if (pa) { g_hitboxParts.push_back(pa); seen.insert(pa); }
         }
-
-        for (auto pn : parts)
-        {
-            auto it = partMap.find(pn);
-            if (it == partMap.end()) continue;
-            uintptr_t prim = g_mem.ReadPtr(it->second + OFF("BasePart", "Primitive"));
-            if (!prim) continue;
-            uintptr_t sizeAddr = prim + OFF("Primitive", "Size");
-            Vec3 sz = g_mem.Read<Vec3>(sizeAddr);
-            bool found = false;
-            for (auto& o : originals) if (o.first == it->second) { found = true; break; }
-            if (!found) originals.push_back({ it->second, sz });
-
-            Vec3 ns{ sz.x * g_cfg.hitboxMult, sz.y * g_cfg.hitboxMult, sz.z * g_cfg.hitboxMult };
-            if (g_cfg.hitboxMaxStuds > 0.f)
-            {
-                if (ns.x > g_cfg.hitboxMaxStuds) ns.x = g_cfg.hitboxMaxStuds;
-                if (ns.y > g_cfg.hitboxMaxStuds) ns.y = g_cfg.hitboxMaxStuds;
-                if (ns.z > g_cfg.hitboxMaxStuds) ns.z = g_cfg.hitboxMaxStuds;
-            }
-            static bool loggedWrite = false;
-            if (!loggedWrite)
-            {
-                loggedWrite = true;
-                Log("[nyx] hitbox write part=0x%llx prim=0x%llx size=(%.1f,%.1f,%.1f) -> (%.1f,%.1f,%.1f) ok=%d",
-                    (unsigned long long)it->second, (unsigned long long)prim,
-                    sz.x, sz.y, sz.z, ns.x, ns.y, ns.z,
-                    (int)g_mem.Write<Vec3>(sizeAddr, ns));
-            }
-            else g_mem.Write<Vec3>(sizeAddr, ns);
-        }
+        for (auto it = g_hitboxMap.begin(); it != g_hitboxMap.end();)
+            it = seen.count(it->first) ? std::next(it) : g_hitboxMap.erase(it);
     }
+
+    // every frame: read current size, rewrite only if it drifted
+    // (roblox resets primitive size often - rewriting every frame is
+    // what stops the damage stutter)
+    static bool logged = false;
+    for (uintptr_t part : g_hitboxParts)
+    {
+        auto it = g_hitboxMap.find(part);
+        if (it == g_hitboxMap.end())
+        {
+            uintptr_t prim = g_mem.ReadPtr(part + OFF("BasePart", "Primitive"));
+            if (!prim) continue;
+            Vec3 orig = g_mem.Read<Vec3>(prim + OFF("Primitive", "Size"));
+            HitboxEntry e{ prim, orig, HitboxExpected(orig) };
+            g_hitboxMap[part] = e;
+            it = g_hitboxMap.find(part);
+            if (!logged)
+            {
+                logged = true;
+                Log("[nyx] hitbox expand part=0x%llx orig=(%.2f,%.2f,%.2f) -> (%.2f,%.2f,%.2f)",
+                    (unsigned long long)part, orig.x, orig.y, orig.z,
+                    e.expected.x, e.expected.y, e.expected.z);
+            }
+        }
+        HitboxEntry& e = it->second;
+        Vec3 cur = g_mem.Read<Vec3>(e.prim + OFF("Primitive", "Size"));
+        if (cur.x != e.expected.x || cur.y != e.expected.y || cur.z != e.expected.z)
+            g_mem.Write<Vec3>(e.prim + OFF("Primitive", "Size"), e.expected);
+    }
+}
+
+// ---------------- reach (tool handle resize, like nyx1 script) ----------------
+
+struct ReachState
+{
+    uintptr_t handle = 0, prim = 0;
+    Vec3 origSize{};
+    bool origMassless = false, applied = false;
+    DWORD refreshAt = 0;
+};
+static ReachState g_reach;
+
+static void RestoreReach()
+{
+    if (!g_reach.applied) return;
+    if (g_reach.prim)
+    {
+        g_mem.Write<Vec3>(g_reach.prim + OFF("Primitive", "Size"), g_reach.origSize);
+        g_mem.Write<uint8_t>(g_reach.handle + OFF("BasePart", "Massless"), g_reach.origMassless ? 1 : 0);
+    }
+    g_reach.applied = false;
+}
+
+static void RunReach()
+{
+    bool want = g_cfg.reachEnabled && g_mem.IsAttached() && GameFocused();
+    if (!want) { RestoreReach(); g_reach.refreshAt = 0; return; }
+
+    DWORD now = GetTickCount();
+    auto& w = sdk::Get();
+    if (!w.localPlayer) { RestoreReach(); return; }
+
+    // re-resolve the equipped tool's Handle ~2hz
+    if (now >= g_reach.refreshAt || !g_reach.handle)
+    {
+        g_reach.refreshAt = now + 500;
+        uintptr_t charAddr = g_mem.ReadPtr(w.localPlayer + OFF("Player", "ModelInstance"));
+        g_reach.handle = 0;
+        if (charAddr)
+        {
+            Instance ch(charAddr);
+            for (auto& c : ch.GetChildren())
+            {
+                if (c.GetClassName() != "Tool") continue;
+                for (auto& t : c.GetChildren())
+                    if (t.GetName() == "Handle") { g_reach.handle = t.addr; break; }
+                if (g_reach.handle) break;
+            }
+        }
+        if (g_reach.handle != 0)
+        {
+            g_reach.prim = g_mem.ReadPtr(g_reach.handle + OFF("BasePart", "Primitive"));
+            if (g_reach.prim)
+            {
+                g_reach.origSize = g_mem.Read<Vec3>(g_reach.prim + OFF("Primitive", "Size"));
+                g_reach.origMassless = g_mem.Read<uint8_t>(g_reach.handle + OFF("BasePart", "Massless")) != 0;
+            }
+            else g_reach.handle = 0;
+        }
+        else RestoreReach();
+    }
+    if (!g_reach.handle || !g_reach.prim) return;
+
+    Vec3 want_{ g_reach.origSize.x, g_reach.origSize.y, g_reach.origSize.z + g_cfg.reachStuds };
+    Vec3 cur = g_mem.Read<Vec3>(g_reach.prim + OFF("Primitive", "Size"));
+    if (cur.x != want_.x || cur.y != want_.y || cur.z != want_.z)
+        g_mem.Write<Vec3>(g_reach.prim + OFF("Primitive", "Size"), want_);
+    g_mem.Write<uint8_t>(g_reach.handle + OFF("BasePart", "Massless"), 1);
+    g_reach.applied = true;
 }
 
 // ---------------- key rebind ----------------
@@ -815,6 +913,10 @@ static void MenuHitbox()
     ImGui::SliderFloat("Max studs (0=off)", &g_cfg.hitboxMaxStuds, 0.f, 30.f, "%.1f");
     ImGui::Combo("Activation", &g_cfg.hitboxMode, kActModes, 3);
     ImGui::TextDisabled("%s: %s", kActModes[g_cfg.hitboxMode], VkName(g_cfg.hitboxKey));
+    ImGui::Separator();
+    ImGui::Text("Reach");
+    ImGui::Checkbox("Enabled##reach", &g_cfg.reachEnabled);
+    ImGui::SliderFloat("Range (studs)", &g_cfg.reachStuds, 0.f, 5.f, "%.1f");
 }
 
 static void MenuVisuals()
@@ -1127,6 +1229,7 @@ void Overlay::Run()
             RunAimbot();
             RunTriggerbot();
             RunHitbox();
+            RunReach();
         }
 
         ImGui_ImplDX11_NewFrame();
@@ -1158,6 +1261,7 @@ void Overlay::Run()
     }
 
     RestoreHitboxes();
+    RestoreReach();
     g_mem.Detach();
 }
 

@@ -59,6 +59,8 @@ void config::Load(const char* path)
     g_cfg.hitboxMode = std::stoi(get("hitbox_mode", "2"));
     g_cfg.hitboxMult = std::stof(get("hitbox_mult", "2.5"));
     g_cfg.hitboxMaxStuds = std::stof(get("hitbox_max", "0"));
+    g_cfg.reachEnabled = get("reach_enabled", "0") == "1";
+    g_cfg.reachStuds = std::stof(get("reach_studs", "1"));
     g_cfg.streamproof = get("streamproof", "1") == "1";
     g_cfg.menuKey = std::stoi(get("menu_key", "161"));
     g_cfg.uiTheme = std::stoi(get("ui_theme", "0"));
@@ -104,6 +106,8 @@ void config::Save(const char* path)
     f << "hitbox_mode=" << g_cfg.hitboxMode << "\n";
     f << "hitbox_mult=" << g_cfg.hitboxMult << "\n";
     f << "hitbox_max=" << g_cfg.hitboxMaxStuds << "\n";
+    f << "reach_enabled=" << g_cfg.reachEnabled << "\n";
+    f << "reach_studs=" << g_cfg.reachStuds << "\n";
     f << "streamproof=" << g_cfg.streamproof << "\n";
     f << "menu_key=" << g_cfg.menuKey << "\n";
     f << "ui_theme=" << g_cfg.uiTheme << "\n";
