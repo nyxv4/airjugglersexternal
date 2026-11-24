@@ -7,6 +7,119 @@
 #include <vector>
 #include <cstdint>
 
+// hyperion kills remotely-created threads in robloxplayerbeta before they
+// run any user code (exit code 0xC000071C, flag never set). the standard
+// bypass is thread hijacking: suspend an existing roblox thread, point it
+// at our stub, and let it run the payload then jump back - no new thread.
+struct HijackCtx { DWORD tid; HANDLE th; CONTEXT ctx; };
+
+// returns 1 = entry ran, 0 = armed but timed out (stubs still live, do
+// NOT fall back to remote thread - would double-run entry), -1 = could
+// not arm any thread (safe to try other methods)
+static int RunViaHijack(HANDLE proc, DWORD pid, uintptr_t rbase,
+    uintptr_t entry, uintptr_t flagAddr, const std::vector<uintptr_t>& tlsCbs)
+{
+    HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+    if (snap == INVALID_HANDLE_VALUE) return -1;
+
+    std::vector<HijackCtx> threads;
+    THREADENTRY32 te{ sizeof(te) };
+    if (Thread32First(snap, &te))
+        do {
+            if (te.th32OwnerProcessID == pid)
+                threads.push_back({ te.th32ThreadID, nullptr, {} });
+        } while (Thread32Next(snap, &te));
+    CloseHandle(snap);
+    printf("[mm] hijack: %zu threads in target\n", threads.size());
+
+    // arm up to 8 threads. threads blocked in long kernel waits (sleep,
+    // vsync) won't reach user mode for a while, so arm several and let
+    // whichever wakes first claim the job via a lock cmpxchg on flagAddr.
+    // flag layout: dword @flagAddr = claim bits (bit0 = claimed),
+    // byte @flagAddr+8 = stage (2 = inside entry, 3 = entry returned)
+    struct Arm { HANDLE th; CONTEXT ctx; LPVOID stub; };
+    std::vector<Arm> arms;
+    int armed = 0;
+
+    for (auto& t : threads)
+    {
+        if (armed >= 8) break;
+        HANDLE th = OpenThread(THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT |
+                               THREAD_SET_CONTEXT | THREAD_QUERY_INFORMATION, FALSE, t.tid);
+        if (!th) continue;
+        if (SuspendThread(th) == (DWORD)-1) { CloseHandle(th); continue; }
+        CONTEXT ctx{}; ctx.ContextFlags = CONTEXT_FULL;
+        if (!GetThreadContext(th, &ctx) || !ctx.Rip) { ResumeThread(th); CloseHandle(th); continue; }
+
+        // stub: save all regs, claim via lock bts, stage=2, call tlsCbs
+        // + entry, stage=3, restore regs, jmp original Rip
+        uint8_t sc[640]; int n = 0;
+        auto emit = [&](std::initializer_list<uint8_t> b) { for (auto x : b) sc[n++] = x; };
+        auto emitMovRax = [&](uint64_t v) { emit({0x48,0xB8}); memcpy(sc+n,&v,8); n+=8; };
+        emit({0x50,0x51,0x52,0x53,0x55,0x56,0x57});           // push rax..rdi
+        emit({0x41,0x50,0x41,0x51,0x41,0x52,0x41,0x53});     // push r8..r11
+        emit({0x41,0x54,0x41,0x55,0x41,0x56,0x41,0x57});     // push r12..r15
+        emit({0x9C});                                          // pushfq
+        emit({0x48,0x89,0xE5});                                // mov rbp,rsp
+        emit({0x48,0x83,0xE4,0xF0});                           // and rsp,-16
+        emit({0x48,0x83,0xEC,0x20});                           // sub rsp,0x20
+        // lock bts dword[flagAddr],0 ; jc loser (0F 82 rel32, patch later)
+        emitMovRax(flagAddr);
+        emit({0xBA,0x01,0x00,0x00,0x00});                      // mov edx,1
+        emit({0xF0,0x0F,0xAB,0x10});                           // lock bts [rax],edx
+        int jcPos = n; emit({0x0F,0x82,0,0,0,0});              // jc -> loser
+        emitMovRax(flagAddr + 8); emit({0xC6,0x00,0x02});      // stage=2
+        auto emitDllCall = [&](uintptr_t fn) {
+            emit({0x48,0xB9}); { uint64_t v = rbase; memcpy(sc+n,&v,8); n+=8; }
+            emit({0xBA,0x01,0x00,0x00,0x00});
+            emit({0x4D,0x31,0xC0});
+            emitMovRax(fn); emit({0xFF,0xD0});
+        };
+        for (uintptr_t cb : tlsCbs) emitDllCall(cb);
+        emitDllCall(entry);
+        emitMovRax(flagAddr + 8); emit({0xC6,0x00,0x03});      // stage=3
+        int loserPos = n;
+        // patch jc rel32: target = loserPos, src end = jcPos+6
+        int32_t rel = loserPos - (jcPos + 6);
+        memcpy(sc + jcPos + 2, &rel, 4);
+        emit({0x48,0x89,0xEC});                                // mov rsp,rbp
+        emit({0x9D});                                          // popfq
+        emit({0x41,0x5F,0x41,0x5E,0x41,0x5D,0x41,0x5C});       // pop r15..r12
+        emit({0x41,0x5B,0x41,0x5A,0x41,0x59,0x41,0x58});       // pop r11..r8
+        emit({0x5F,0x5E,0x5D,0x5B,0x5A,0x59,0x58});            // pop rdi..rax
+        emitMovRax(ctx.Rip); emit({0xFF,0xE0});                // jmp origRip
+
+        LPVOID stubMem = VirtualAllocEx(proc, nullptr, sizeof(sc), MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+        if (!stubMem) { ResumeThread(th); CloseHandle(th); continue; }
+        WriteProcessMemory(proc, stubMem, sc, n, nullptr);
+
+        CONTEXT nc = ctx;
+        nc.Rip = (DWORD64)stubMem;
+        nc.ContextFlags = CONTEXT_CONTROL;
+        if (!SetThreadContext(th, &nc)) { ResumeThread(th); VirtualFreeEx(proc, stubMem, 0, MEM_RELEASE); CloseHandle(th); continue; }
+        ResumeThread(th);
+        arms.push_back({ th, ctx, stubMem });
+        armed++;
+    }
+    printf("[mm] hijack armed %d threads\n", armed);
+    if (!armed) return -1;
+
+    // poll stage byte up to 20s - whichever armed thread wakes first wins
+    bool ok = false;
+    for (int i = 0; i < 400; i++)
+    {
+        uint8_t stage = 0;
+        ReadProcessMemory(proc, (void*)(flagAddr + 8), &stage, 1, nullptr);
+        if (stage == 3) { ok = true; break; }
+        Sleep(50);
+    }
+    printf("[mm] hijack result: %s\n", ok ? "entry returned" : "timeout");
+    // NOTE: stub pages are intentionally left allocated - armed threads
+    // that haven't woken yet still need them to resume cleanly
+    for (auto& a : arms) CloseHandle(a.th);
+    return ok ? 1 : 0;
+}
+
 static uintptr_t RemoteModuleBase(DWORD pid, const wchar_t* name)
 {
     HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, pid);
@@ -44,14 +157,17 @@ static uintptr_t EnsureRemoteModule(HANDLE proc, DWORD pid, const wchar_t* name)
 
     SIZE_T len = (wcslen(full) + 1) * sizeof(wchar_t);
     LPVOID remote = VirtualAllocEx(proc, nullptr, len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-    if (!remote) return 0;
+    if (!remote) { printf("[mm] ensuremod alloc fail %ls\n", name); return 0; }
     WriteProcessMemory(proc, remote, full, len, nullptr);
     HMODULE k32 = GetModuleHandleW(L"kernel32.dll");
     auto loadLib = (LPTHREAD_START_ROUTINE)GetProcAddress(k32, "LoadLibraryW");
     HANDLE th = CreateRemoteThread(proc, nullptr, 0, loadLib, remote, 0, nullptr);
-    if (th) { WaitForSingleObject(th, 5000); CloseHandle(th); }
+    if (th) { WaitForSingleObject(th, 8000); DWORD rc = 0; GetExitCodeThread(th, &rc); printf("[mm] ensuremod loadlib %ls rc=0x%lx\n", name, rc); CloseHandle(th); }
+    else printf("[mm] ensuremod thread fail %ls err=%lu\n", name, GetLastError());
     VirtualFreeEx(proc, remote, 0, MEM_RELEASE);
-    return RemoteModuleBase(pid, name);
+    uintptr_t b = RemoteModuleBase(pid, name);
+    printf("[mm] ensuremod %ls -> 0x%llx (path %ls)\n", name, (unsigned long long)b, full);
+    return b;
 }
 
 bool ManualMap(DWORD pid, const wchar_t* dllPath)
@@ -97,6 +213,8 @@ bool ManualMap(DWORD pid, const wchar_t* dllPath)
 
     // relocations
     int64_t delta = (int64_t)rbase - (int64_t)prefBase;
+    printf("[mm] rbase=0x%llx pref=0x%llx delta=%lld imgSize=0x%lx entryRva=0x%lx\n",
+        (unsigned long long)rbase, (unsigned long long)prefBase, (long long)delta, imgSize, entryRva);
     if (delta && relocRva)
     {
         auto* blk = (IMAGE_BASE_RELOCATION*)(file.data() + 0); // rva->file offset needed; use section map below
@@ -179,16 +297,38 @@ bool ManualMap(DWORD pid, const wchar_t* dllPath)
                 return rva < nt->OptionalHeader.SizeOfHeaders ? rva : 0;
             };
             DWORD oftOff = rva2off2(oftRva), ftOff = rva2off2(ftRva);
-            if (!oftOff || !ftOff) continue;
+            if (!oftOff || !ftOff) { printf("[mm] thunk rva->off failed %s\n", dllName); continue; }
 
+            // resolve an export to its REMOTE address. GetProcAddress
+            // follows forwarders (kernel32!CreateFileA -> KernelBase) so
+            // the address may live in a DIFFERENT module than depRemote -
+            // find the real owning module locally, then its remote twin.
+            auto resolveRemote = [&](FARPROC p) -> uintptr_t {
+                if (!p) return 0;
+                HMODULE owner = nullptr;
+                if (!GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                                        GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                                        (LPCSTR)p, &owner) || !owner)
+                    return depRemote + ((uintptr_t)p - localBase);
+                char path[MAX_PATH];
+                GetModuleFileNameA(owner, path, MAX_PATH);
+                const char* base = strrchr(path, '\\');
+                base = base ? base + 1 : path;
+                uintptr_t rbase2 = RemoteModuleBase(pid, NarrowToWide(base).c_str());
+                if (!rbase2) rbase2 = EnsureRemoteModule(proc, pid, NarrowToWide(base).c_str());
+                if (!rbase2) return 0;
+                return rbase2 + ((uintptr_t)p - (uintptr_t)owner);
+            };
+
+            int resolved = 0, total = 0;
             auto* origThk = (IMAGE_THUNK_DATA64*)(file.data() + oftOff);
             for (int i = 0; origThk[i].u1.AddressOfData; i++)
             {
+                total++;
                 uintptr_t remoteFunc = 0;
                 if (origThk[i].u1.Ordinal & IMAGE_ORDINAL_FLAG64)
                 {
-                    FARPROC p = GetProcAddress(local, (LPCSTR)(origThk[i].u1.Ordinal & 0xFFFF));
-                    if (p) remoteFunc = depRemote + ((uintptr_t)p - localBase);
+                    remoteFunc = resolveRemote(GetProcAddress(local, (LPCSTR)(origThk[i].u1.Ordinal & 0xFFFF)));
                 }
                 else
                 {
@@ -196,39 +336,137 @@ bool ManualMap(DWORD pid, const wchar_t* dllPath)
                     DWORD hintOff = rva2off2(hintRva);
                     if (!hintOff) continue;
                     auto* ibn = (IMAGE_IMPORT_BY_NAME*)(file.data() + hintOff);
-                    FARPROC p = GetProcAddress(local, ibn->Name);
-                    if (p) remoteFunc = depRemote + ((uintptr_t)p - localBase);
+                    remoteFunc = resolveRemote(GetProcAddress(local, ibn->Name));
+                    printf("[mm]   %s -> 0x%llx\n", ibn->Name, (unsigned long long)remoteFunc);
                 }
                 if (remoteFunc)
+                {
                     WriteProcessMemory(proc, (void*)(rbase + ftRva + i * 8), &remoteFunc, 8, nullptr);
+                    resolved++;
+                }
+            }
+            printf("[mm] imports %s: dep=0x%llx %d/%d resolved\n", dllName,
+                (unsigned long long)depRemote, resolved, total);
+            // verify: read back IAT slots remotely
+            for (int i = 0; i < 8; i++)
+            {
+                uintptr_t iatVal = 0;
+                ReadProcessMemory(proc, (void*)(rbase + ftRva + i * 8), &iatVal, 8, nullptr);
+                printf("[mm]   iat[%d] remote=0x%llx\n", i, (unsigned long long)iatVal);
             }
         }
     }
 
-    // wipe PE headers (opsec - nothing should scan them now)
-    std::vector<uint8_t> zeros(nt->OptionalHeader.SizeOfHeaders, 0);
-    WriteProcessMemory(proc, remoteBase, zeros.data(), zeros.size(), nullptr);
+    // NOTE: headers are NOT wiped before entry - CRT startup reads its own
+    // PE headers (security cookie / load config); wiping them hangs init.
+    // wipe after entry returns instead (still anon memory to scanners)
 
-    // call DllMain via shellcode
+    // TLS callbacks must run BEFORE the entry point - CRT dlls use them
+    // for per-thread/per-process init; skipping them hangs CRTStartup
+    std::vector<uintptr_t> tlsCbs;
+    {
+        DWORD tlsRva = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_TLS].VirtualAddress;
+        if (tlsRva)
+        {
+            // IMAGE_TLS_DIRECTORY64 fields are VAs - convert to remote addrs
+            auto rd64 = [&](DWORD rva) -> uint64_t {
+                uint64_t v = 0;
+                ReadProcessMemory(proc, (void*)(rbase + rva), &v, 8, nullptr);
+                return v;
+            };
+            uint64_t cbsVa = rd64(tlsRva + 0x18); // AddressOfCallBacks
+            if (cbsVa)
+            {
+                uintptr_t cbsRemote = rbase + (uintptr_t)(cbsVa - prefBase);
+                for (int i = 0; i < 16; i++)
+                {
+                    uint64_t cb = 0;
+                    ReadProcessMemory(proc, (void*)(cbsRemote + i * 8), &cb, 8, nullptr);
+                    if (!cb) break;
+                    tlsCbs.push_back(rbase + (uintptr_t)(cb - prefBase));
+                }
+            }
+        }
+        printf("[mm] tls callbacks: %zu\n", tlsCbs.size());
+    }
+
+    // debug flag: shellcode writes stage markers here so we can tell
+    // whether it ran at all vs hung inside the entry call
+    uint8_t* flagRemote = nullptr;
+    LPVOID flagMem = VirtualAllocEx(proc, nullptr, 16, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    uintptr_t flagAddr = (uintptr_t)flagMem;
+
+    // call entry (and TLS callbacks first) via shellcode. the prologue
+    // aligns the stack to the ABI (16-byte) - without it callees using
+    // movaps fault instantly
     uintptr_t entry = rbase + entryRva;
-    uint8_t sc[64]; int n = 0;
-    // mov rcx, rbase ; mov edx,1 ; xor r8d,r8d ; mov rax,entry ; call rax ; ret
-    sc[n++] = 0x48; sc[n++] = 0xB9; memcpy(sc + n, &rbase, 8); n += 8;
-    sc[n++] = 0xBA; sc[n++] = 1; sc[n++] = 0; sc[n++] = 0; sc[n++] = 0;
-    sc[n++] = 0x4D; sc[n++] = 0x31; sc[n++] = 0xC0;
-    sc[n++] = 0x48; sc[n++] = 0xB8; memcpy(sc + n, &entry, 8); n += 8;
-    sc[n++] = 0xFF; sc[n++] = 0xD0;
+    uint8_t sc[512]; int n = 0;
+    if (getenv("MM_LOOP_TEST"))
+    {
+        // diagnostic: write flag then spin forever - proves the remote
+        // thread executes our shellcode at all
+        sc[n++] = 0x48; sc[n++] = 0xB8; memcpy(sc + n, &flagAddr, 8); n += 8;
+        sc[n++] = 0xC6; sc[n++] = 0x00; sc[n++] = 0x01;
+        sc[n++] = 0xEB; sc[n++] = 0xFE;
+    }
+    else
+    {
+    sc[n++] = 0x55;                                   // push rbp
+    sc[n++] = 0x48; sc[n++] = 0x89; sc[n++] = 0xE5;   // mov rbp, rsp
+    sc[n++] = 0x48; sc[n++] = 0x83; sc[n++] = 0xE4; sc[n++] = 0xF0; // and rsp,-16
+    sc[n++] = 0x48; sc[n++] = 0x83; sc[n++] = 0xEC; sc[n++] = 0x20; // sub rsp,0x20
+    // mov rax,flagAddr ; mov byte[rax],1
+    sc[n++] = 0x48; sc[n++] = 0xB8; memcpy(sc + n, &flagAddr, 8); n += 8;
+    sc[n++] = 0xC6; sc[n++] = 0x00; sc[n++] = 0x01;
+    auto emitCall = [&](uintptr_t fn) {
+        sc[n++] = 0x48; sc[n++] = 0xB9; memcpy(sc + n, &rbase, 8); n += 8; // mov rcx,rbase
+        sc[n++] = 0xBA; sc[n++] = 1; sc[n++] = 0; sc[n++] = 0; sc[n++] = 0; // mov edx,1
+        sc[n++] = 0x4D; sc[n++] = 0x31; sc[n++] = 0xC0;                     // xor r8,r8
+        sc[n++] = 0x48; sc[n++] = 0xB8; memcpy(sc + n, &fn, 8); n += 8;      // mov rax,fn
+        sc[n++] = 0xFF; sc[n++] = 0xD0;                                     // call rax
+    };
+    for (uintptr_t cb : tlsCbs) emitCall(cb);
+    emitCall(entry);
+    // mov rsp,rbp ; pop rbp ; ret
+    sc[n++] = 0x48; sc[n++] = 0x89; sc[n++] = 0xEC;
+    sc[n++] = 0x5D;
     sc[n++] = 0xC3;
+    // unreachable: ret2 -> ExitThread(0)
+    sc[n++] = 0x31; sc[n++] = 0xC9;                   // xor ecx,ecx
+    sc[n++] = 0x48; sc[n++] = 0xB8; { uintptr_t et = (uintptr_t)GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "ExitThread"); memcpy(sc + n, &et, 8); n += 8; } // mov rax,ExitThread
+    sc[n++] = 0xFF; sc[n++] = 0xE0;                   // jmp rax
+    } // end !MM_LOOP_TEST
 
-    LPVOID scRemote = VirtualAllocEx(proc, nullptr, sizeof(sc), MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-    WriteProcessMemory(proc, scRemote, sc, n, nullptr);
-    HANDLE th = CreateRemoteThread(proc, nullptr, 0, (LPTHREAD_START_ROUTINE)scRemote, nullptr, 0, nullptr);
-    if (!th) { printf("entry thread failed %lu\n", GetLastError()); CloseHandle(proc); return false; }
-    WaitForSingleObject(th, 10000);
-    DWORD rc = 0; GetExitCodeThread(th, &rc);
-    printf("manualmap entry returned %lu\n", rc);
-    CloseHandle(th);
-    VirtualFreeEx(proc, scRemote, 0, MEM_RELEASE);
+    // hyperion blocks CreateRemoteThread in roblox - try thread hijack
+    // first (runs payload on an existing roblox thread, then resumes it)
+    int hijackRes = -1;
+    if (!getenv("MM_NO_HIJACK"))
+        hijackRes = RunViaHijack(proc, pid, rbase, entry, flagAddr, tlsCbs);
+    printf("[mm] hijack result: %d\n", hijackRes);
+
+    DWORD rc = (hijackRes == 1) ? 1 : 0;
+    HANDLE th = nullptr;
+    if (hijackRes != 1 && hijackRes != 0)
+    {
+        LPVOID scRemote = VirtualAllocEx(proc, nullptr, sizeof(sc), MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+        WriteProcessMemory(proc, scRemote, sc, n, nullptr);
+        th = CreateRemoteThread(proc, nullptr, 0, (LPTHREAD_START_ROUTINE)scRemote, nullptr, 0, nullptr);
+        if (!th) { printf("entry thread failed %lu\n", GetLastError()); CloseHandle(proc); return false; }
+        WaitForSingleObject(th, 10000);
+        GetExitCodeThread(th, &rc);
+        VirtualFreeEx(proc, scRemote, 0, MEM_RELEASE);
+    }
+    uint8_t flag = 0;
+    ReadProcessMemory(proc, flagMem, &flag, 1, nullptr);
+    printf("manualmap entry returned %lu (shellcode flag=%u)\n", rc, flag);
+
+    // now safe to wipe headers - entry already ran
+    {
+        std::vector<uint8_t> zeros(nt->OptionalHeader.SizeOfHeaders, 0);
+        WriteProcessMemory(proc, remoteBase, zeros.data(), zeros.size(), nullptr);
+    }
+    if (th) CloseHandle(th);
+    if (flagMem) VirtualFreeEx(proc, flagMem, 0, MEM_RELEASE);
     CloseHandle(proc);
     return rc != 0;
 }

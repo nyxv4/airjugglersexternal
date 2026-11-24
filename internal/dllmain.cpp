@@ -6,6 +6,7 @@
 #include <vector>
 #include <cstdio>
 #include <cstdarg>
+#include <process.h>
 #include "offsets.h"
 
 #define OFF(cls, field) offsets::Get(cls, field)
@@ -223,7 +224,7 @@ static bool Resolve()
     return ws && pl;
 }
 
-static DWORD WINAPI Main(LPVOID)
+static unsigned __stdcall Main(LPVOID)
 {
     Log("[nyx-int] dll loaded, base=0x%llx", (unsigned long long)Base());
 
@@ -278,9 +279,27 @@ BOOL APIENTRY DllMain(HMODULE mod, DWORD reason, LPVOID)
 {
     if (reason == DLL_PROCESS_ATTACH)
     {
+        // raw kernel32 marker first - proves DllMain ran even if CRT
+        // stdio isn't usable on this thread
+        {
+            char tmp[MAX_PATH]; GetTempPathA(MAX_PATH, tmp);
+            strcat_s(tmp, "nyx_marker.txt");
+            HANDLE f = CreateFileA(tmp, FILE_APPEND_DATA, 0, nullptr, OPEN_ALWAYS, 0, nullptr);
+            if (f != INVALID_HANDLE_VALUE) { const char* m = "DllMain\n"; DWORD w; WriteFile(f, m, 8, &w, nullptr); CloseHandle(f); }
+        }
         Log("[nyx-int] DllMain entered");
+        // single-instance guard - manual map can be run twice
+        HANDLE once = CreateMutexA(nullptr, TRUE, "NyxInternalLoaded");
+        if (once && GetLastError() == ERROR_ALREADY_EXISTS)
+        {
+            Log("[nyx-int] already loaded, skipping");
+            CloseHandle(once);
+            return TRUE;
+        }
         DisableThreadLibraryCalls(mod);
-        CreateThread(nullptr, 0, Main, nullptr, 0, nullptr);
+        // _beginthreadex (not CreateThread) so the CRT initializes the
+        // new thread - Main uses fopen/regex/strings heavily
+        _beginthreadex(nullptr, 0, Main, nullptr, 0, nullptr);
     }
     return TRUE;
 }
