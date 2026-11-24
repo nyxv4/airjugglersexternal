@@ -75,6 +75,8 @@ void config::Load(const char* path)
     g_cfg.kaAttackRange = toFloat(get("ka_attack", "18"), 18.f);
     g_cfg.kaAngle = toFloat(get("ka_angle", "90"), 90.f);
     g_cfg.kaSmooth = toFloat(get("ka_smooth", "0.35"), 0.35f);
+    g_cfg.kaPredMs = toFloat(get("ka_pred_ms", "80"), 80.f);
+    g_cfg.kaClickPx = toFloat(get("ka_click_px", "25"), 25.f);
     g_cfg.kaRequireMouse = get("ka_requiremouse", "0") == "1";
     g_cfg.kaTeamCheck = get("ka_teamcheck", "1") == "1";
     g_cfg.aimbotSort = clampi(toInt(get("aimbot_sort", "0"), 0), 0, 2);
@@ -138,6 +140,8 @@ void config::Save(const char* path)
     f << "ka_attack=" << g_cfg.kaAttackRange << "\n";
     f << "ka_angle=" << g_cfg.kaAngle << "\n";
     f << "ka_smooth=" << g_cfg.kaSmooth << "\n";
+    f << "ka_pred_ms=" << g_cfg.kaPredMs << "\n";
+    f << "ka_click_px=" << g_cfg.kaClickPx << "\n";
     f << "ka_requiremouse=" << g_cfg.kaRequireMouse << "\n";
     f << "ka_teamcheck=" << g_cfg.kaTeamCheck << "\n";
     f << "aimbot_sort=" << g_cfg.aimbotSort << "\n";

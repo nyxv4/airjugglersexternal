@@ -1097,14 +1097,39 @@ static void RunKillaura()
     }
     if (!best) return;
 
-    // aim at the target's head (screen space)
-    float sx = best->headX - g_localX, sy = best->headY - g_localY;
-    mouse_move((int)(sx * g_cfg.kaSmooth), (int)(sy * g_cfg.kaSmooth));
+    // aim at the predicted head position - leads moving targets so the
+    // swing connects instead of whiffing on where they were
+    Vec3 aimWorld = best->headWorld;
+    if (g_cfg.kaPredMs > 0.f)
+    {
+        float lead = g_cfg.kaPredMs / 1000.f;
+        aimWorld.x += best->headVel.x * lead;
+        aimWorld.y += best->headVel.y * lead;
+        aimWorld.z += best->headVel.z * lead;
+    }
+    float tx = best->headX, ty = best->headY;
+    Vec2 ts;
+    if (sdk::WorldToScreen(aimWorld, ts) && ts.x != -1.f) { tx = ts.x; ty = ts.y; }
+
+    // subpixel accumulation: fractional pixels carry over between frames
+    // instead of being truncated away (was leaving a permanent deadzone)
+    float errX = (tx - g_localX) * g_cfg.kaSmooth;
+    float errY = (ty - g_localY) * g_cfg.kaSmooth;
+    static float accX = 0.f, accY = 0.f;
+    accX += errX; accY += errY;
+    int mx = (int)accX, my = (int)accY;
+    accX -= mx; accY -= my;
+    if (mx || my) mouse_move(mx, my);
+
+    // only swing when the crosshair is actually on the target - clicking
+    // at CPS while the aim is still travelling was the main whiff source
+    float aimErr = sqrtf((tx - g_localX) * (tx - g_localX) +
+                         (ty - g_localY) * (ty - g_localY));
 
     // click at CPS while inside attack range (+ reachStuds when reach is on
     // - the lunge steps you into range for that click, then restores)
     float clickRange = g_cfg.kaAttackRange + (g_cfg.reachEnabled ? g_cfg.reachStuds : 0.f);
-    if (bestDist <= clickRange)
+    if (bestDist <= clickRange && aimErr <= g_cfg.kaClickPx)
     {
         static ULONGLONG nextClick = 0;
         ULONGLONG now = GetTickCount64();
@@ -1343,6 +1368,8 @@ static void MenuHitbox()
     ImGui::SliderFloat("Attack range (studs)", &g_cfg.kaAttackRange, 1.f, 30.f, "%.0f");
     ImGui::SliderFloat("Max angle", &g_cfg.kaAngle, 1.f, 360.f, "%.0f");
     ImGui::SliderFloat("Aim smooth", &g_cfg.kaSmooth, 0.05f, 1.f, "%.2f");
+    ImGui::SliderFloat("Prediction (ms)", &g_cfg.kaPredMs, 0.f, 300.f, "%.0f");
+    ImGui::SliderFloat("Click within px", &g_cfg.kaClickPx, 2.f, 80.f, "%.0f");
     ImGui::Combo("Activation##ka", &g_cfg.kaMode, kActModes, 3);
     RebindButton("Key##ka", &g_cfg.kaKey);
     ImGui::Checkbox("Require mouse down##ka", &g_cfg.kaRequireMouse);

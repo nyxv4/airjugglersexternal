@@ -64,6 +64,8 @@ struct Settings
     float kaAttackRange = 18.f;  // click range (studs)
     float kaAngle = 90.f;        // max facing angle, 1-360
     float kaSmooth = 0.35f;      // aim pull strength 0..1
+    float kaPredMs = 80.f;       // lead target by velocity * ms (hitreg vs movers)
+    float kaClickPx = 25.f;      // only click when crosshair is this close to target
     bool kaRequireMouse = false; // only while LMB held
     bool kaTeamCheck = true;
 
@@ -94,7 +96,7 @@ struct Settings
 
 extern Settings g_cfg;
 
-inline const char* NYX_VERSION = "25";
+inline const char* NYX_VERSION = "26";
 
 namespace config
 {
