@@ -53,7 +53,10 @@ std::vector<Instance> Instance::GetChildren() const
     uintptr_t start = g_mem.ReadPtr(addr + OFF("Instance", "ChildrenStart"));
     if (start == 0) return out;
     uintptr_t end = g_mem.ReadPtr(start + OFF("Instance", "ChildrenEnd"));
-    for (uintptr_t entry = g_mem.ReadPtr(start); entry && entry < end; entry += 0x10)
+    // cap the walk - a garbage 'end' from a bad read would otherwise spin
+    // forever (roblox instances never have anywhere near 1024 children)
+    for (uintptr_t entry = g_mem.ReadPtr(start), n = 0;
+         entry && entry < end && n < 1024; entry += 0x10, n++)
     {
         uintptr_t inst = g_mem.ReadPtr(entry);
         if (inst > 0x10000) out.emplace_back(inst);

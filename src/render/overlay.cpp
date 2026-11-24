@@ -620,6 +620,18 @@ static void mouse_click()
     SendInput(2, in, sizeof(in));
 }
 
+// subpixel accumulation shared by aimbot + killaura - fractional pixels
+// carry over between frames instead of being truncated away every frame
+// (the truncation was leaving a permanent aim deadzone)
+static float g_aimAccX = 0.f, g_aimAccY = 0.f;
+static void AimMove(float dxPx, float dyPx)
+{
+    g_aimAccX += dxPx; g_aimAccY += dyPx;
+    int mx = (int)g_aimAccX, my = (int)g_aimAccY;
+    g_aimAccX -= mx; g_aimAccY -= my;
+    if (mx || my) mouse_move(mx, my);
+}
+
 static bool key_down(int vk) { return (GetAsyncKeyState(vk) & 0x8000) != 0; }
 
 // activation: 0 = hold key, 1 = press key to toggle, 2 = always on
@@ -786,22 +798,27 @@ static void RunAimbot()
     g_aimbotHadTarget = true;
 
     // silent bow aim: instant snap while a bow-type tool is equipped
-    bool bowMode = LocalToolIsBow();
+    bool bowMode = g_cfg.silentBow && LocalToolIsBow();
     float smooth = bowMode ? 1.f :
         ((g_cfg.aimbotSmoothing && g_cfg.aimbotSmoothStyle == 1) ? g_cfg.aimbotSmooth : 1.f);
-    float dx = (tx - cx) * smooth;
-    float dy = (ty - cy) * smooth;
-    mouse_move((int)dx, (int)dy);
+    AimMove((tx - cx) * smooth, (ty - cy) * smooth);
 }
 
 static void RunTriggerbot()
 {
-    if (!g_cfg.triggerbotEnabled || !g_mem.IsAttached()) return;
+    if (!g_mem.IsAttached()) return;
     if (!IsBedWars()) return;
+    // silent bow auto-fire works even with the triggerbot itself disabled
+    bool bowAuto = g_cfg.silentBow && LocalToolIsBow();
+    if (!g_cfg.triggerbotEnabled && !bowAuto) return;
     static bool toggled = false, wasDown = false;
-    // silent bow: auto-fires while a bow is equipped, no key needed
-    if (!(LocalToolIsBow() && g_cfg.silentBow) &&
-        !ActKey(g_cfg.triggerKey, g_cfg.triggerMode, toggled, wasDown)) return;
+    if (!bowAuto && !ActKey(g_cfg.triggerKey, g_cfg.triggerMode, toggled, wasDown)) return;
+
+    // time-gate clicks instead of Sleep - sleeping here hitches the whole
+    // overlay render loop on every click
+    static ULONGLONG nextTrig = 0;
+    ULONGLONG now = GetTickCount64();
+    if (now < nextTrig) return;
 
     for (auto& p : g_players)
     {
@@ -811,7 +828,7 @@ static void RunTriggerbot()
         {
             TryReachLunge(p.rootWorld);
             mouse_click();
-            Sleep(60);
+            nextTrig = now + (bowAuto ? 300 : 100); // bows need draw time
             break;
         }
     }
@@ -926,7 +943,9 @@ static DWORD g_toolRefresh = 0;
 
 static bool LocalToolIsBow()
 {
-    if (!g_cfg.silentBow || !g_mem.IsAttached()) { g_localTool.clear(); return false; }
+    // detects the equipped tool regardless of silentBow - callers decide
+    // what to do with it (silent aim, reach guard, hitfix guard)
+    if (!g_mem.IsAttached()) { g_localTool.clear(); return false; }
     DWORD now = GetTickCount();
     if (now >= g_toolRefresh)
     {
@@ -962,6 +981,7 @@ static void RunHitfix()
 {
     bool want = g_cfg.hitfixEnabled && g_mem.IsAttached() && GameFocused();
     if (!want) { g_hitfixHrp = 0; g_hitfixRefresh = 0; return; }
+    if (LocalToolIsBow()) return; // don't plant your feet while drawing a bow
     if (!(GetAsyncKeyState(VK_LBUTTON) & 0x8000)) return; // only while swinging
 
     DWORD now = GetTickCount();
@@ -1010,6 +1030,7 @@ static uintptr_t LocalHrpPrimitive()
 static void TryReachLunge(const Vec3& target)
 {
     if (!g_cfg.reachEnabled || g_cfg.reachStuds <= 0.f || !g_mem.IsAttached()) return;
+    if (LocalToolIsBow()) return; // never lunge while aiming a ranged weapon
     if (g_lunge.prim) return; // already lunging - don't overwrite the restore point
     uintptr_t prim = LocalHrpPrimitive();
     if (!prim) return;
@@ -1141,15 +1162,9 @@ static void RunKillaura()
     Vec2 ts;
     if (sdk::WorldToScreen(aimWorld, ts) && ts.x != -1.f) { tx = ts.x; ty = ts.y; }
 
-    // subpixel accumulation: fractional pixels carry over between frames
-    // instead of being truncated away (was leaving a permanent deadzone)
-    float errX = (tx - g_localX) * g_cfg.kaSmooth;
-    float errY = (ty - g_localY) * g_cfg.kaSmooth;
-    static float accX = 0.f, accY = 0.f;
-    accX += errX; accY += errY;
-    int mx = (int)accX, my = (int)accY;
-    accX -= mx; accY -= my;
-    if (mx || my) mouse_move(mx, my);
+    // subpixel accumulation via shared AimMove - fractional pixels carry
+    // over between frames instead of dying to int truncation
+    AimMove((tx - g_localX) * g_cfg.kaSmooth, (ty - g_localY) * g_cfg.kaSmooth);
 
     // only swing when the crosshair is actually on the target - clicking
     // at CPS while the aim is still travelling was the main whiff source
@@ -1357,6 +1372,8 @@ static void MenuAim()
     const char* sorts[] = { "Crosshair", "Nearest", "Lowest HP" };
     ImGui::Combo("Target", &g_cfg.aimbotSort, sorts, 3);
     ImGui::Checkbox("BedWars only", &g_cfg.bedwarsOnly);
+    if (g_cfg.bedwarsOnly)
+        ImGui::TextDisabled("Gates aim, triggerbot, killaura and silent bow");
     ImGui::SliderFloat("Range (studs)", &g_cfg.aimbotRange, 5.f, 150.f, "%.0f");
     ImGui::Combo("Activation", &g_cfg.aimbotMode, kActModes, 3);
     RebindButton("Key", &g_cfg.aimbotKey);
@@ -1489,7 +1506,11 @@ static void DrawMenu()
         lastTheme = g_cfg.uiTheme;
         lastAcc[0] = g_cfg.accent[0]; lastAcc[1] = g_cfg.accent[1]; lastAcc[2] = g_cfg.accent[2];
         ApplyTheme();
-        config::Save();
+        // save once the values settle - dragging the color picker used to
+        // write the config file every single frame
+        static DWORD lastThemeSave = 0;
+        DWORD now = GetTickCount();
+        if (now - lastThemeSave > 800) { lastThemeSave = now; config::Save(); }
     }
 
     ImGui::SetNextWindowSize({ 560, 480 }, ImGuiCond_FirstUseEver);
@@ -1570,6 +1591,7 @@ static LRESULT WINAPI WndProc(HWND h, UINT msg, WPARAM w, LPARAM l)
 
 bool Overlay::Create(HINSTANCE inst)
 {
+    srand((unsigned)GetTickCount() ^ GetCurrentProcessId());
     int sw = GetSystemMetrics(SM_CXSCREEN), sh = GetSystemMetrics(SM_CYSCREEN);
     g_width = sw; g_height = sh;
 
@@ -1674,13 +1696,15 @@ void Overlay::Run()
         bool focused = GameFocused();
 
         // key rebind capture (menu must be open to click the button anyway)
-        PollRebind();
+        bool justRebound = PollRebind();
 
-        // menu toggle — only while Roblox (or this overlay) is focused
+        // menu toggle — only while Roblox (or this overlay) is focused.
+        // skip the frame a rebind happened or pressing the new menu key
+        // would instantly toggle the menu shut
         static bool prevMenuKey = false, prevIns = false;
         bool menuKey = focused && key_down(g_cfg.menuKey);
         bool insKey = focused && key_down(VK_INSERT);
-        if ((menuKey && !prevMenuKey) || (insKey && !prevIns))
+        if (!justRebound && ((menuKey && !prevMenuKey) || (insKey && !prevIns)))
         {
             g_cfg.menuVisible = !g_cfg.menuVisible;
             SetClickThrough(!g_cfg.menuVisible);
@@ -1692,10 +1716,14 @@ void Overlay::Run()
         if (!g_mem.IsAttached() && GetTickCount() - lastTry > 1000)
         {
             lastTry = GetTickCount();
-            if (!offsets::Ready())
+            // offsets fetch gets its own slower cadence - a dead host used
+            // to block the render thread on every 1s attach retry
+            static DWORD lastFetch = 0;
+            if (!offsets::Ready() && GetTickCount() - lastFetch > 15000)
             {
+                lastFetch = GetTickCount();
                 bool ok = offsets::Fetch();
-                Log("[nyx] offsets fetch: %s (%zu classes)", ok ? "ok" : "FAILED", 0);
+                Log("[nyx] offsets fetch: %s", ok ? "ok" : "FAILED");
             }
             if (g_mem.Attach(L"RobloxPlayerBeta.exe") || g_mem.Attach(L"RobloxPlayer.exe"))
             {
@@ -1742,6 +1770,11 @@ void Overlay::Run()
         else if (!g_mem.IsAttached())
         {
             g_players.clear();
+            g_cache.clear();
+            g_npcs.clear();
+            g_localHrpAddr = 0;
+            g_hitboxActive = false;
+            RestoreHitboxes();
         }
 
         UpdateReachLunge();

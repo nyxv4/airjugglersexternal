@@ -6,6 +6,16 @@
 
 namespace http
 {
+    // wininet defaults are ~60s+ - a hung host would freeze the overlay
+    // render thread on every offsets retry. cap everything at 5s.
+    static void SetTimeouts(HINTERNET inet)
+    {
+        DWORD t = 5000;
+        InternetSetOptionA(inet, INTERNET_OPTION_CONNECT_TIMEOUT, &t, sizeof(t));
+        InternetSetOptionA(inet, INTERNET_OPTION_SEND_TIMEOUT, &t, sizeof(t));
+        InternetSetOptionA(inet, INTERNET_OPTION_RECEIVE_TIMEOUT, &t, sizeof(t));
+    }
+
     std::string Get(const std::string& url)
     {
         // minimal parse: https://host/path
@@ -16,6 +26,7 @@ namespace http
         std::wstring path(slash == std::string::npos ? L"/" : std::wstring(rest.begin() + slash, rest.end()));
         HINTERNET inet = InternetOpenA("NYX/1.0", INTERNET_OPEN_TYPE_PRECONFIG, nullptr, nullptr, 0);
         if (!inet) return "";
+        SetTimeouts(inet);
         std::string hostN(host.begin(), host.end());
         HINTERNET conn = InternetConnectA(inet, hostN.c_str(), INTERNET_DEFAULT_HTTPS_PORT, nullptr, nullptr, INTERNET_SERVICE_HTTP, 0, 0);
         if (!conn) { InternetCloseHandle(inet); return ""; }
@@ -44,6 +55,7 @@ namespace http
         std::wstring path(slash == std::string::npos ? L"/" : std::wstring(rest.begin() + slash, rest.end()));
         HINTERNET inet = InternetOpenA("NYX/1.0", INTERNET_OPEN_TYPE_PRECONFIG, nullptr, nullptr, 0);
         if (!inet) return false;
+        SetTimeouts(inet);
         std::string hostN(host.begin(), host.end());
         HINTERNET conn = InternetConnectA(inet, hostN.c_str(), INTERNET_DEFAULT_HTTPS_PORT, nullptr, nullptr, INTERNET_SERVICE_HTTP, 0, 0);
         if (!conn) { InternetCloseHandle(inet); return false; }
