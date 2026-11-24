@@ -5,6 +5,8 @@
 #include <cstdio>
 #include <cstdarg>
 
+bool ManualMap(DWORD pid, const wchar_t* dllPath);
+
 static bool EnableDebugPriv()
 {
     HANDLE tok;
@@ -76,6 +78,14 @@ static int Run(int argc, wchar_t** argv)
     if (!pid) pid = FindPid(L"RobloxPlayer.exe");
     if (!pid) { Out("roblox not running\n"); return 1; }
     Out("roblox pid=%lu\n", pid);
+
+    // manual map first - LoadLibrary gets unmapped by Byfron
+    if (ManualMap(pid, full))
+    {
+        Out("manualmap ok - check %%TEMP%%\\nyx_internal.log for dll output");
+        return 0;
+    }
+    Out("manualmap failed, trying LoadLibrary fallback...");
 
     HANDLE proc = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pid);
     if (!proc) { Out("openprocess failed err=%lu\n", GetLastError()); return 1; }

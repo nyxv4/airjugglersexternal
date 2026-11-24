@@ -16,7 +16,7 @@ cl /nologo /O2 /MT /EHsc /std:c++17 ^
    wininet.lib || exit /b 1
 
 cl /nologo /O2 /MT /EHsc /std:c++17 ^
-   injector.cpp /Fe:build\NyxInjector.exe /Fo:build\ advapi32.lib || exit /b 1
+   injector.cpp manualmap.cpp /Fe:build\NyxInjector.exe /Fo:build\ advapi32.lib || exit /b 1
 
 echo.
 echo built: build\NyxInternal.dll + build\NyxInjector.exe
