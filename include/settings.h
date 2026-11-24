@@ -13,6 +13,9 @@ struct Settings
     bool espTeamCheck = true;
     bool espShowTeammates = false;
     bool espKit = true;
+    // kit-specific object esp (hidden metal, orbs, bees, traps...)
+    bool objEsp = true;
+    float objEspDist = 250.f;   // studs
 
     // aimbot (hold key)
     bool aimbotEnabled = true;
@@ -96,7 +99,7 @@ struct Settings
 
 extern Settings g_cfg;
 
-inline const char* NYX_VERSION = "32";
+inline const char* NYX_VERSION = "33";
 
 namespace config
 {

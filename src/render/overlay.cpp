@@ -414,6 +414,126 @@ static void ScanNpcs()
     }
 }
 
+// ---------------- object esp ----------------
+// kit-specific world objects (hidden metal, elder orbs, bees, traps...)
+// - names come from the bedwars script's ESPKits tag table. we scan
+// workspace descendants every few seconds, resolve each match to a
+// BasePart, then just read positions per frame.
+
+struct ObjEspDef { const char* key; const char* label; ImU32 col; };
+static const ObjEspDef kObjEsp[] = {
+    { "hidden-metal", "METAL", IM_COL32(240, 200, 80, 255) },
+    { "treeorb", "ELDER ORB", IM_COL32(90, 220, 120, 255) },
+    { "natures_essence", "ESSENCE", IM_COL32(120, 230, 140, 255) },
+    { "tamedbee", "BEE", IM_COL32(240, 210, 60, 255) },
+    { "bee", "BEE", IM_COL32(240, 210, 60, 255) },
+    { "ghost_orb", "GHOST ORB", IM_COL32(170, 200, 240, 255) },
+    { "ghost", "GHOST", IM_COL32(170, 200, 240, 255) },
+    { "thorns", "THORNS", IM_COL32(90, 160, 70, 255) },
+    { "alchemy_crystal", "CRYSTAL", IM_COL32(150, 110, 230, 255) },
+    { "wild_flower", "FLOWER", IM_COL32(230, 140, 200, 255) },
+    { "crit_star", "STAR", IM_COL32(240, 220, 90, 255) },
+    { "shadow_coin", "COIN", IM_COL32(200, 190, 90, 255) },
+    { "petrified-player", "FOSSIL", IM_COL32(200, 200, 190, 255) },
+    { "large_rock", "ROCK", IM_COL32(150, 140, 120, 255) },
+    { "snap_trap", "TRAP", IM_COL32(230, 90, 60, 255) },
+    { "elementtome", "TOME", IM_COL32(140, 100, 230, 255) },
+    { "mage_spellbook", "SPELLBOOK", IM_COL32(140, 100, 230, 255) },
+    { "sheepmodel", "SHEEP", IM_COL32(235, 235, 245, 255) },
+    { "purple_hay_bale", "HAY", IM_COL32(190, 140, 220, 255) },
+    { "telepearl", "PEARL", IM_COL32(200, 220, 240, 255) },
+    { "landmine", "MINE", IM_COL32(160, 160, 60, 255) },
+    { "tesla_trap", "TESLA", IM_COL32(120, 200, 240, 255) },
+    { "venom_trap", "VENOM TRAP", IM_COL32(120, 200, 60, 255) },
+};
+
+struct ObjEspEntry { uintptr_t part; const ObjEspDef* def; };
+static std::vector<ObjEspEntry> g_objEsp;
+
+static bool IsPartClass(const std::string& c)
+{
+    return c == "Part" || c == "MeshPart" || c == "UnionOperation" ||
+           c == "WedgePart" || c == "CornerWedgePart" || c == "TrussPart" ||
+           c == "SpawnLocation" || c == "Seat" || c == "VehicleSeat";
+}
+
+// resolve a matched instance to a drawable part - the part itself, or a
+// model's first part child (bee models, orb models etc.)
+static uintptr_t ResolveObjPart(uintptr_t inst)
+{
+    Instance in(inst);
+    std::string cls = in.GetClassName();
+    if (IsPartClass(cls)) return inst;
+    if (cls == "Model")
+        for (auto& c : in.GetChildren())
+            if (IsPartClass(c.GetClassName())) return c.addr;
+    return 0;
+}
+
+static void ScanObjectEsp()
+{
+    g_objEsp.clear();
+    auto& w = sdk::Get();
+    if (!w.workspace) return;
+
+    struct Frame { uintptr_t inst; int depth; };
+    std::vector<Frame> stack{ { w.workspace, 0 } };
+    std::unordered_set<uintptr_t> seenParts;
+    int budget = 5000; // hard cap on instances visited per scan
+
+    while (!stack.empty() && budget-- > 0)
+    {
+        Frame f = stack.back(); stack.pop_back();
+        Instance in(f.inst);
+
+        std::string name = in.GetName();
+        if (!name.empty())
+        {
+            for (auto& c : name) c = (char)tolower((unsigned char)c);
+            for (auto& d : kObjEsp)
+            {
+                if (name.find(d.key) != std::string::npos)
+                {
+                    uintptr_t part = ResolveObjPart(f.inst);
+                    if (part && !seenParts.count(part))
+                    {
+                        seenParts.insert(part);
+                        g_objEsp.push_back({ part, &d });
+                    }
+                    break; // first matching def wins for this instance
+                }
+            }
+        }
+        if (f.depth < 6)
+            for (auto& c : in.GetChildren())
+                stack.push_back({ c.addr, f.depth + 1 });
+    }
+}
+
+static void DrawObjEsp(ImDrawList* dl)
+{
+    if (!g_cfg.objEsp || g_objEsp.empty()) return;
+    Vec3 lpos = CachedLocalPos();
+    for (auto& e : g_objEsp)
+    {
+        if (Instance::PartTransparency(e.part) > 0.9f) continue;
+        Vec3 pos = Instance::PartPosition(e.part);
+        if (pos.x == 0.f && pos.y == 0.f && pos.z == 0.f) continue;
+        float dx = pos.x - lpos.x, dy = pos.y - lpos.y, dz = pos.z - lpos.z;
+        float dist = sqrtf(dx * dx + dy * dy + dz * dz);
+        if (dist > g_cfg.objEspDist || dist < 1.f) continue;
+        Vec2 s;
+        if (!sdk::WorldToScreen(pos, s) || s.x < 0.f) continue;
+
+        ImU32 c = e.def->col;
+        dl->AddQuad({ s.x, s.y - 6.f }, { s.x + 6.f, s.y }, { s.x, s.y + 6.f }, { s.x - 6.f, s.y }, c, 1.5f);
+        char buf[64];
+        snprintf(buf, sizeof(buf), "%s %.0fm", e.def->label, dist);
+        ImVec2 ts = ImGui::CalcTextSize(buf);
+        dl->AddText({ s.x - ts.x / 2.f, s.y + 8.f }, c, buf);
+    }
+}
+
 static void CollectPlayers()
 {
     g_players.clear();
@@ -1582,6 +1702,10 @@ static void MenuVisuals()
     ImGui::Checkbox("Team check", &g_cfg.espTeamCheck);
     ImGui::Checkbox("Show teammates", &g_cfg.espShowTeammates);
     ImGui::Checkbox("Kit ESP", &g_cfg.espKit);
+    ImGui::Checkbox("Object ESP", &g_cfg.objEsp);
+    if (g_cfg.objEsp)
+        ImGui::SliderFloat("Object dist", &g_cfg.objEspDist, 25.f, 1000.f, "%.0f studs");
+    ImGui::TextDisabled("Marks hidden metal, orbs, bees, traps and other kit objects");
 }
 
 static void MenuMisc()
@@ -1906,6 +2030,18 @@ void Overlay::Run()
             // only burn RPM calls while Roblox is actually focused
             if (focused && GetTickCount() - lastCollect > 16) { lastCollect = GetTickCount(); CollectPlayers(); }
 
+            // object esp rescan - workspace walk is expensive so it runs
+            // on a slow cadence, positions are read per-frame afterwards
+            if (focused && g_cfg.objEsp)
+            {
+                static DWORD lastObjScan = 0;
+                if (GetTickCount() - lastObjScan > 4000)
+                {
+                    lastObjScan = GetTickCount();
+                    ScanObjectEsp();
+                }
+            }
+
             static DWORD lastStat = 0;
             static bool loggedNames = false;
             if (!loggedNames && sdk::Get().localPlayer)
@@ -1935,6 +2071,7 @@ void Overlay::Run()
             g_players.clear();
             g_cache.clear();
             g_npcs.clear();
+            g_objEsp.clear();
             g_localHrpAddr = 0;
             g_hitboxActive = false;
             RestoreHitboxes();
@@ -1956,7 +2093,7 @@ void Overlay::Run()
         ImGui::NewFrame();
 
         ImDrawList* bg = ImGui::GetBackgroundDrawList();
-        if (g_mem.IsAttached() && focused) DrawEsp(bg);
+        if (g_mem.IsAttached() && focused) { DrawEsp(bg); DrawObjEsp(bg); }
         // feature status line - shows what's actually armed right now so
         // there's no guessing whether a toggle/key actually engaged
         {
