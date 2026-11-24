@@ -69,7 +69,7 @@ static int RunViaHijack(HANDLE proc, DWORD pid, uintptr_t rbase,
         auto emitXmm = [&](int xmm, int off, bool store) {
             emit({0x66});
             if (xmm >= 8) emit({0x44});                        // REX.R
-            emit({0x0F, store ? 0x7F : 0x6F});
+            emit({0x0F, (uint8_t)(store ? 0x7F : 0x6F)});
             emit({(uint8_t)(0x84 | ((xmm & 7) << 3)), 0x24});   // modrm+sib [rsp+disp32]
             int32_t d = off; emit({(uint8_t)d,(uint8_t)(d>>8),(uint8_t)(d>>16),(uint8_t)(d>>24)});
         };
@@ -101,9 +101,11 @@ static int RunViaHijack(HANDLE proc, DWORD pid, uintptr_t rbase,
         emit({0x5F,0x5E,0x5D,0x5B,0x5A,0x59,0x58});            // pop rdi..rax
         emitMovRax(ctx.Rip); emit({0xFF,0xE0});                // jmp origRip
 
-        LPVOID stubMem = VirtualAllocEx(proc, nullptr, sizeof(sc), MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+        LPVOID stubMem = VirtualAllocEx(proc, nullptr, sizeof(sc), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
         if (!stubMem) { ResumeThread(th); CloseHandle(th); continue; }
         WriteProcessMemory(proc, stubMem, sc, n, nullptr);
+        DWORD old = 0;
+        VirtualProtectEx(proc, stubMem, sizeof(sc), PAGE_EXECUTE_READ, &old);
 
         CONTEXT nc = ctx;
         nc.Rip = (DWORD64)stubMem;
@@ -207,8 +209,9 @@ bool ManualMap(DWORD pid, const wchar_t* dllPath)
     HANDLE proc = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pid);
     if (!proc) { printf("openprocess failed %lu\n", GetLastError()); return false; }
 
-    // allocate + copy image
-    LPVOID remoteBase = VirtualAllocEx(proc, nullptr, imgSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    // allocate RW first - sections get real protections after all writes.
+    // a giant RWX image is the #1 thing memory scanners flag
+    LPVOID remoteBase = VirtualAllocEx(proc, nullptr, imgSize, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     if (!remoteBase) { printf("remote alloc failed\n"); CloseHandle(proc); return false; }
     uintptr_t rbase = (uintptr_t)remoteBase;
 
@@ -369,6 +372,93 @@ bool ManualMap(DWORD pid, const wchar_t* dllPath)
         }
     }
 
+    // apply real section protections now that all writes are done -
+    // code RX, data RW, headers R. no RWX anywhere
+    {
+        DWORD old = 0;
+        VirtualProtectEx(proc, remoteBase, nt->OptionalHeader.SizeOfHeaders, PAGE_READONLY, &old);
+        auto* s = IMAGE_FIRST_SECTION(nt);
+        for (int i = 0; i < nt->FileHeader.NumberOfSections; i++, s++)
+        {
+            bool e = s->Characteristics & IMAGE_SCN_MEM_EXECUTE;
+            bool w = s->Characteristics & IMAGE_SCN_MEM_WRITE;
+            bool r = s->Characteristics & IMAGE_SCN_MEM_READ;
+            DWORD prot = e ? (w ? PAGE_EXECUTE_READWRITE : PAGE_EXECUTE_READ)
+                           : (w ? PAGE_READWRITE : (r ? PAGE_READONLY : PAGE_NOACCESS));
+            SIZE_T sz = s->Misc.VirtualSize > s->SizeOfRawData ? s->Misc.VirtualSize : s->SizeOfRawData;
+            VirtualProtectEx(proc, (void*)(rbase + s->VirtualAddress), sz, prot, &old);
+        }
+        printf("[mm] section protections applied\n");
+    }
+
+    // register the image in the PEB module lists - hyperion validates
+    // thread start addresses against loaded modules; unlisted memory
+    // gets killed. also makes GetModuleHandleEx find us (CRT happy)
+    {
+        typedef LONG NTSTATUS;
+        struct PBI { PVOID Reserved1; PVOID PebBaseAddress; PVOID Reserved2[2]; ULONG_PTR UniqueProcessId; PVOID Reserved3; };
+        auto NtQIP = (NTSTATUS(NTAPI*)(HANDLE, ULONG, PVOID, ULONG, PULONG))
+            GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "NtQueryInformationProcess");
+        PBI pbi{};
+        if (NtQIP && NtQIP(proc, 0, &pbi, sizeof(pbi), nullptr) == 0 && pbi.PebBaseAddress)
+        {
+            uintptr_t peb = (uintptr_t)pbi.PebBaseAddress;
+            uintptr_t ldr = 0;
+            ReadProcessMemory(proc, (void*)(peb + 0x18), &ldr, 8, nullptr);
+            if (ldr)
+            {
+                // LDR_DATA_TABLE_ENTRY: links@0/0x10/0x20, base@0x30,
+                // entry@0x38, size@0x40, FullDllName@0x48, BaseDllName@0x58
+                LPVOID entMem = VirtualAllocEx(proc, nullptr, 0x400, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+                if (entMem)
+                {
+                    uintptr_t ent = (uintptr_t)entMem;
+                    // unicode strings live at ent+0x100
+                    wchar_t fullPath[] = L"C:\\Windows\\System32\\NyxInternal.dll";
+                    wchar_t baseName[] = L"NyxInternal.dll";
+                    WriteProcessMemory(proc, (void*)(ent + 0x100), fullPath, sizeof(fullPath), nullptr);
+                    WriteProcessMemory(proc, (void*)(ent + 0x180), baseName, sizeof(baseName), nullptr);
+                    uint64_t vals[16] = {};
+                    vals[6] = rbase;                 // DllBase @0x30
+                    vals[7] = rbase + entryRva;       // EntryPoint @0x38
+                    vals[8] = imgSize;                // SizeOfImage @0x40
+                    WriteProcessMemory(proc, (void*)ent, vals, sizeof(vals), nullptr);
+                    // UNICODE_STRING FullDllName @0x48 / BaseDllName @0x58:
+                    // len u16, maxlen u16, pad u32, buf u64
+                    auto putUS = [&](int q, USHORT len, uintptr_t buf) {
+                        uint8_t b[16] = {};
+                        *(USHORT*)b = len; *(USHORT*)(b + 2) = len + 2;
+                        *(uintptr_t*)(b + 8) = buf;
+                        WriteProcessMemory(proc, (void*)(ent + q * 8), b, 16, nullptr);
+                    };
+                    putUS(9, (USHORT)(wcslen(fullPath) * 2), ent + 0x100);   // @0x48
+                    putUS(11, (USHORT)(wcslen(baseName) * 2), ent + 0x180);  // @0x58
+
+                    // insert at head of all three lists: InLoadOrder@ldr+0x10
+                    // (entry field +0x00), InMemoryOrder@ldr+0x20 (field +0x10),
+                    // InInitOrder@ldr+0x30 (field +0x20)
+                    struct L { DWORD listOff; DWORD fieldOff; } lists[3] = {
+                        {0x10, 0x00}, {0x20, 0x10}, {0x30, 0x20}
+                    };
+                    for (auto& L : lists)
+                    {
+                        uintptr_t head = ldr + L.listOff;
+                        uint64_t first = 0;
+                        ReadProcessMemory(proc, (void*)head, &first, 8, nullptr);
+                        uintptr_t linkVA = ent + L.fieldOff;
+                        // our Flink/Blink
+                        WriteProcessMemory(proc, (void*)linkVA, &first, 8, nullptr);
+                        WriteProcessMemory(proc, (void*)(linkVA + 8), &head, 8, nullptr);
+                        if (first) WriteProcessMemory(proc, (void*)(first + 8), &linkVA, 8, nullptr);
+                        WriteProcessMemory(proc, (void*)head, &linkVA, 8, nullptr);
+                    }
+                    printf("[mm] peb module list entry added ent=0x%llx\n", (unsigned long long)ent);
+                }
+            }
+        }
+        else printf("[mm] peb lookup failed\n");
+    }
+
     // NOTE: headers are NOT wiped before entry - CRT startup reads its own
     // PE headers (security cookie / load config); wiping them hangs init.
     // wipe after entry returns instead (still anon memory to scanners)
@@ -472,10 +562,14 @@ bool ManualMap(DWORD pid, const wchar_t* dllPath)
     ReadProcessMemory(proc, flagMem, &flag, 1, nullptr);
     printf("manualmap entry returned %lu (shellcode flag=%u)\n", rc, flag);
 
-    // now safe to wipe headers - entry already ran
+    // now safe to wipe headers - entry already ran. headers are READONLY
+    // now, so flip to RW, zero, flip back
     {
+        DWORD old = 0;
+        VirtualProtectEx(proc, remoteBase, nt->OptionalHeader.SizeOfHeaders, PAGE_READWRITE, &old);
         std::vector<uint8_t> zeros(nt->OptionalHeader.SizeOfHeaders, 0);
         WriteProcessMemory(proc, remoteBase, zeros.data(), zeros.size(), nullptr);
+        VirtualProtectEx(proc, remoteBase, nt->OptionalHeader.SizeOfHeaders, PAGE_READONLY, &old);
     }
     if (th) CloseHandle(th);
     if (flagMem) VirtualFreeEx(proc, flagMem, 0, MEM_RELEASE);
