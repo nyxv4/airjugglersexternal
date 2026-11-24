@@ -14,6 +14,7 @@ struct Settings
     bool espShowTeammates = false;
     bool espKit = true;
     bool espVisCheck = false;   // hide ESP on players behind walls (raycast)
+    bool espVisRay = false;     // draw raycast line crosshair->player (green/red)
     bool espChams = false;      // filled translucent box under ESP
     bool espSkeleton = false;   // limb connection lines
     // kit-specific object esp (hidden metal, orbs, bees, traps...)
@@ -35,6 +36,7 @@ struct Settings
     bool aimbotRaycast = false;  // draw ray to target, green=clear red=blocked
     bool aimbotHuman = false;    // humanized movement: arc + jitter + rhythm
     bool triggerAssist = false;  // click when crosshair is over an enemy
+    bool triggerWall = false;    // don't trigger through walls (raycast)
     int aimbotFovColor = 0;      // 0 = white, 1 = black
     float aimbotSmoothX = 0.25f; // 0..1 per-axis pull strength
     float aimbotSmoothY = 0.25f;
@@ -99,7 +101,7 @@ struct Settings
 
 extern Settings g_cfg;
 
-inline const char* NYX_VERSION = "46";
+inline const char* NYX_VERSION = "47";
 
 namespace config
 {

@@ -40,6 +40,7 @@ void config::Load(const char* path)
     g_cfg.espShowTeammates = get("esp_teammates", "0") == "1";
     g_cfg.espKit = get("esp_kit", "1") == "1";
     g_cfg.espVisCheck = get("esp_vischeck", "0") == "1";
+    g_cfg.espVisRay = get("esp_visray", "0") == "1";
     g_cfg.espChams = get("esp_chams", "0") == "1";
     g_cfg.espSkeleton = get("esp_skeleton", "0") == "1";
     g_cfg.objEsp = get("obj_esp", "1") == "1";
@@ -66,6 +67,7 @@ void config::Load(const char* path)
     g_cfg.aimbotRaycast = get("aimbot_raycast", "0") == "1";
     g_cfg.aimbotHuman = get("aimbot_human", "0") == "1";
     g_cfg.triggerAssist = get("trigger_assist", "0") == "1";
+    g_cfg.triggerWall = get("trigger_wall", "0") == "1";
     g_cfg.aimbotFovColor = clampi(toInt(get("aimbot_fovcolor", "0"), 0), 0, 1);
     g_cfg.aimbotSmoothX = toFloat(get("aimbot_smooth_x", get("aimbot_smooth", "0.25").c_str()), 0.25f);
     g_cfg.aimbotSmoothY = toFloat(get("aimbot_smooth_y", get("aimbot_smooth", "0.25").c_str()), 0.25f);
@@ -155,6 +157,7 @@ void config::Save(const char* path)
     f << "esp_teammates=" << g_cfg.espShowTeammates << "\n";
     f << "esp_kit=" << g_cfg.espKit << "\n";
     f << "esp_vischeck=" << g_cfg.espVisCheck << "\n";
+    f << "esp_visray=" << g_cfg.espVisRay << "\n";
     f << "esp_chams=" << g_cfg.espChams << "\n";
     f << "esp_skeleton=" << g_cfg.espSkeleton << "\n";
     f << "obj_esp=" << g_cfg.objEsp << "\n";
@@ -173,6 +176,7 @@ void config::Save(const char* path)
     f << "aimbot_raycast=" << g_cfg.aimbotRaycast << "\n";
     f << "aimbot_human=" << g_cfg.aimbotHuman << "\n";
     f << "trigger_assist=" << g_cfg.triggerAssist << "\n";
+    f << "trigger_wall=" << g_cfg.triggerWall << "\n";
     f << "aimbot_fovcolor=" << g_cfg.aimbotFovColor << "\n";
     f << "aimbot_smooth_x=" << g_cfg.aimbotSmoothX << "\n";
     f << "aimbot_smooth_y=" << g_cfg.aimbotSmoothY << "\n";

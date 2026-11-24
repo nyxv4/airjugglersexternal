@@ -396,6 +396,13 @@ static void RefreshPlayer(CachedPlayer& cp, const Instance& p)
 static Vec3 CachedLocalPos();
 static ImU32 HitboxEspColor();
 static bool EspRayVisible(const Vec3& eye, const Vec3& tgt);
+static int RayBlockedSamples(const Vec3& eye, const Vec3& tgt);
+static bool OccluderCacheReady();
+
+struct Occluder { uintptr_t prim = 0; Vec3 pos, size; };
+static std::vector<uintptr_t> g_occluderParts;
+static std::unordered_map<uintptr_t, Occluder> g_occluders;
+static DWORD g_occlScanAt = 0;
 
 // ---------------- npc/dummy scan (bedwars bots etc.) ----------------
 // dummies are Models in Workspace, not Player instances - scan for
@@ -973,11 +980,11 @@ static void DrawEsp(ImDrawList* dl)
     ImU32 colTeam = IM_COL32(80, 200, 120, 255);
     ImU32 colEnemy = IM_COL32(255, 80, 80, 255);
 
-    // visible-only: raycast eye->chest per player, skip blocked ones.
+    // visible-only + vis rays: 3-sample raycast eye->chest per player.
     // the occluder cache is kept warm by UpdateOccluders() in the loop.
+    bool visOn = g_cfg.espVisCheck, visRayOn = g_cfg.espVisRay;
     Vec3 visEye{};
-    bool visOn = g_cfg.espVisCheck;
-    if (visOn)
+    if (visOn || visRayOn)
     {
         Vec3 lp = CachedLocalPos();
         visEye = { lp.x, lp.y + 1.5f, lp.z };
@@ -985,8 +992,14 @@ static void DrawEsp(ImDrawList* dl)
 
     for (auto& p : g_players)
     {
-        if (visOn && !EspRayVisible(visEye,
-            { p.rootWorld.x, p.rootWorld.y + 1.f, p.rootWorld.z }))
+        Vec3 chest{ p.rootWorld.x, p.rootWorld.y + 1.f, p.rootWorld.z };
+        bool blocked = (visOn || visRayOn) && OccluderCacheReady() &&
+            RayBlockedSamples(visEye, chest) >= 2;
+        if (visRayOn)
+            dl->AddLine({ g_localX, g_localY },
+                { (p.x1 + p.x2) / 2.f, (p.y1 + p.y2) / 2.f },
+                blocked ? IM_COL32(255, 80, 80, 140) : IM_COL32(80, 255, 130, 140), 1.f);
+        if (visOn && blocked)
             continue;
         ImU32 c = p.teammate ? colTeam : colEnemy;
         float cx = (p.x1 + p.x2) / 2.f;
@@ -1402,11 +1415,6 @@ static bool IsBedWars()
 // their AABBs ourselves. character subtrees are excluded so players
 // never occlude each other.
 
-struct Occluder { uintptr_t prim = 0; Vec3 pos, size; };
-static std::vector<uintptr_t> g_occluderParts;
-static std::unordered_map<uintptr_t, Occluder> g_occluders;
-static DWORD g_occlScanAt = 0;
-
 static void ScanOccluders()
 {
     g_occluderParts.clear();
@@ -1470,6 +1478,20 @@ static void WarmOccluders(int maxN)
     }
 }
 
+// drop degenerate occluders - sub-stud specks and map-sized slabs were
+// producing false blocks on rays that clip a corner of a huge part
+static void PruneOccluders()
+{
+    for (auto it = g_occluders.begin(); it != g_occluders.end();)
+    {
+        Occluder& o = it->second;
+        if (!o.prim || o.size.x < 0.3f || o.size.y < 0.3f || o.size.z < 0.3f ||
+            o.size.x > 4000.f || o.size.y > 4000.f || o.size.z > 4000.f)
+            it = g_occluders.erase(it);
+        else ++it;
+    }
+}
+
 // slab test: does segment eye->tgt pass through any cached part's AABB?
 // cheap reject first: the ray's own bounding box must overlap the part's
 // bounds or the ray can't possibly hit it - skips ~90% of tests
@@ -1521,11 +1543,46 @@ static bool RayBlocked(const Vec3& eye, const Vec3& tgt)
     return false;
 }
 
-// esp visible-only helper - empty cache means "can't tell", treat as visible
+// 3-sample ray: center ray plus two rays offset ~0.4 studs perpendicular
+// to the view direction. a target counts as BLOCKED only if 2+ samples
+// hit geometry - single-sample AABB rays false-block on box edges.
+// returns how many of the 3 samples were blocked (0 = clear, 3 = walled)
+static int RayBlockedSamples(const Vec3& eye, const Vec3& tgt)
+{
+    Vec3 d{ tgt.x - eye.x, tgt.y - eye.y, tgt.z - eye.z };
+    float len = sqrtf(d.x * d.x + d.y * d.y + d.z * d.z);
+    if (len < 0.01f) return 0;
+    // perpendicular basis (any vector not parallel to d)
+    Vec3 up{ 0.f, 1.f, 0.f };
+    if (fabsf(d.y / len) > 0.9f) up = { 1.f, 0.f, 0.f };
+    Vec3 px{ d.y * up.z - d.z * up.y, d.z * up.x - d.x * up.z, d.x * up.y - d.y * up.x };
+    float pl = sqrtf(px.x * px.x + px.y * px.y + px.z * px.z);
+    if (pl < 1e-4f) return RayBlocked(eye, tgt) ? 3 : 0;
+    px.x /= pl; px.y /= pl; px.z /= pl;
+    // second perpendicular = d x px normalized
+    Vec3 pz{ d.y * px.z - d.z * px.y, d.z * px.x - d.x * px.z, d.x * px.y - d.y * px.x };
+    float zl = sqrtf(pz.x * pz.x + pz.y * pz.y + pz.z * pz.z);
+    pz.x /= zl; pz.y /= zl; pz.z /= zl;
+
+    int blocked = 0;
+    const float off = 0.4f;
+    Vec3 ox{ px.x * off, px.y * off, px.z * off };
+    Vec3 oz{ pz.x * off, pz.y * off, pz.z * off };
+    if (RayBlocked(eye, tgt)) ++blocked;
+    if (RayBlocked({ eye.x + ox.x, eye.y + ox.y, eye.z + ox.z },
+                   { tgt.x + ox.x, tgt.y + ox.y, tgt.z + ox.z })) ++blocked;
+    if (RayBlocked({ eye.x - oz.x, eye.y - oz.y, eye.z - oz.z },
+                   { tgt.x - oz.x, tgt.y - oz.y, tgt.z - oz.z })) ++blocked;
+    return blocked;
+}
+
+// esp/aim visibility: majority-clear wins, empty cache = can't tell = visible
 static bool EspRayVisible(const Vec3& eye, const Vec3& tgt)
 {
-    return g_occluders.empty() || !RayBlocked(eye, tgt);
+    return g_occluders.empty() || RayBlockedSamples(eye, tgt) < 2;
 }
+
+static bool OccluderCacheReady() { return !g_occluders.empty(); }
 
 // keeps the occluder cache fresh - rescan every ~8s, warm gradually
 static void UpdateOccluders()
@@ -1533,6 +1590,8 @@ static void UpdateOccluders()
     DWORD now = GetTickCount();
     if (now >= g_occlScanAt) { g_occlScanAt = now + 8000; ScanOccluders(); }
     WarmOccluders(120);
+    static DWORD lastPrune = 0;
+    if (now - lastPrune > 5000) { lastPrune = now; PruneOccluders(); }
 }
 
 // raycast debug state - last aim target + whether the ray to it is clear
@@ -1576,9 +1635,9 @@ static void RunAimbot()
         if (p.teammate && g_cfg.aimbotTeamCheck) continue;
         if (g_cfg.aimbotHealthCheck && p.health <= 0.f) continue;
         if (g_cfg.aimbotRangeCheck && p.dist > g_cfg.aimbotRange) continue;
-        // wall check: ray from eye to the target's chest must be clear
+        // wall check: 3-sample ray eye->chest must be majority-clear
         if (g_cfg.aimbotWallCheck && !g_occluders.empty() &&
-            RayBlocked(eye, { p.rootWorld.x, p.rootWorld.y + 1.f, p.rootWorld.z }))
+            RayBlockedSamples(eye, { p.rootWorld.x, p.rootWorld.y + 1.f, p.rootWorld.z }) >= 2)
             continue;
 
         // prediction: lead the target by velocity * predMs
@@ -1993,10 +2052,22 @@ static void RunTrigger()
     DWORD now = GetTickCount();
     if (now - lastClick < 120) return;
     float cx = g_localX, cy = g_localY;
+    // wall check: don't click targets the raycast says are occluded
+    Vec3 eye{};
+    bool wallOn = g_cfg.triggerWall && !g_occluders.empty();
+    if (wallOn)
+    {
+        UpdateOccluders();
+        Vec3 lp = CachedLocalPos();
+        eye = { lp.x, lp.y + 1.5f, lp.z };
+    }
     for (auto& p : g_players)
     {
         if (p.teammate) continue;
         if (cx < p.x1 || cx > p.x2 || cy < p.y1 || cy > p.y2) continue;
+        if (wallOn && RayBlockedSamples(eye,
+            { p.rootWorld.x, p.rootWorld.y + 1.f, p.rootWorld.z }) >= 2)
+            continue;
         lastClick = now;
         mouse_click();
         break;
@@ -2324,7 +2395,10 @@ static void MenuAim()
         ImGui::TextDisabled("Arc + jitter + irregular rhythm");
     ImGui::Checkbox("Trigger assist", &g_cfg.triggerAssist);
     if (g_cfg.triggerAssist)
+    {
         ImGui::TextDisabled("Clicks when crosshair is over an enemy");
+        ImGui::Checkbox("Trigger wall check", &g_cfg.triggerWall);
+    }
     ImGui::Checkbox("Enable smoothing", &g_cfg.aimbotSmoothing);
     if (g_cfg.aimbotSmoothing)
     {
@@ -2413,6 +2487,9 @@ static void CardPlayerEsp()
     ImGui::Checkbox("Visible only", &g_cfg.espVisCheck);
     if (g_cfg.espVisCheck)
         ImGui::TextDisabled("Hides ESP on players behind walls (raycast)");
+    ImGui::Checkbox("Vis rays", &g_cfg.espVisRay);
+    if (g_cfg.espVisRay)
+        ImGui::TextDisabled("Crosshair->player line, green=clear red=blocked");
     ImGui::Checkbox("Chams", &g_cfg.espChams);
     ImGui::Checkbox("Skeleton", &g_cfg.espSkeleton);
 }
