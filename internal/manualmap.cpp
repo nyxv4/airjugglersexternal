@@ -62,7 +62,18 @@ static int RunViaHijack(HANDLE proc, DWORD pid, uintptr_t rbase,
         emit({0x9C});                                          // pushfq
         emit({0x48,0x89,0xE5});                                // mov rbp,rsp
         emit({0x48,0x83,0xE4,0xF0});                           // and rsp,-16
-        emit({0x48,0x83,0xEC,0x20});                           // sub rsp,0x20
+        emit({0x48,0x81,0xEC,0xE0,0x00,0x00,0x00});             // sub rsp,0xE0
+        // save nonvolatile xmm6-xmm15 - hijacked threads (render/game
+        // code) keep live values there; clobbering them crashes roblox
+        // movdqa [rsp+0x20+i*0x10], xmm(6+i)  /  movdqa xmm,[rsp+...]
+        auto emitXmm = [&](int xmm, int off, bool store) {
+            emit({0x66});
+            if (xmm >= 8) emit({0x44});                        // REX.R
+            emit({0x0F, store ? 0x7F : 0x6F});
+            emit({(uint8_t)(0x84 | ((xmm & 7) << 3)), 0x24});   // modrm+sib [rsp+disp32]
+            int32_t d = off; emit({(uint8_t)d,(uint8_t)(d>>8),(uint8_t)(d>>16),(uint8_t)(d>>24)});
+        };
+        for (int i = 0; i < 10; i++) emitXmm(6 + i, 0x20 + i * 0x10, true);
         // lock bts dword[flagAddr],0 ; jc loser (0F 82 rel32, patch later)
         emitMovRax(flagAddr);
         emit({0xBA,0x01,0x00,0x00,0x00});                      // mov edx,1
@@ -82,6 +93,7 @@ static int RunViaHijack(HANDLE proc, DWORD pid, uintptr_t rbase,
         // patch jc rel32: target = loserPos, src end = jcPos+6
         int32_t rel = loserPos - (jcPos + 6);
         memcpy(sc + jcPos + 2, &rel, 4);
+        for (int i = 9; i >= 0; i--) emitXmm(6 + i, 0x20 + i * 0x10, false); // restore xmm15..xmm6
         emit({0x48,0x89,0xEC});                                // mov rsp,rbp
         emit({0x9D});                                          // popfq
         emit({0x41,0x5F,0x41,0x5E,0x41,0x5D,0x41,0x5C});       // pop r15..r12
