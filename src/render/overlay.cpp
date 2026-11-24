@@ -1109,7 +1109,7 @@ static void ApplyTheme()
 static void MenuAim()
 {
     ImGui::Checkbox("Enabled", &g_cfg.aimbotEnabled);
-    ImGui::SliderFloat("ANGLE", &g_cfg.aimbotFov, 10.f, 500.f, "%.0f px");
+    ImGui::SliderFloat("ANGLE", &g_cfg.aimbotFov, 10.f, 360.f, "%.0f px");
     float sm = g_cfg.aimbotSmooth * 10.f;
     if (ImGui::SliderFloat("Smoothness", &sm, 1.f, 10.f, "%.0f"))
         g_cfg.aimbotSmooth = sm / 10.f;

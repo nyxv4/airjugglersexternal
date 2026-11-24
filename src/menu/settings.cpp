@@ -19,12 +19,18 @@ static std::unordered_map<std::string, std::string> read_kv(const char* path)
     return kv;
 }
 
+// safe parsers - stoi/stof throw on bad input and a single corrupt
+// config line was crashing the exe on startup (the "won't reopen" bug)
+static int toInt(const std::string& s, int def) { try { return std::stoi(s); } catch (...) { return def; } }
+static float toFloat(const std::string& s, float def) { try { return std::stof(s); } catch (...) { return def; } }
+
 void config::Load(const char* path)
 {
     auto kv = read_kv(path);
     auto get = [&](const char* k, const char* def) {
         auto it = kv.find(k); return it == kv.end() ? std::string(def) : it->second;
     };
+    auto clampi = [](int v, int lo, int hi) { return v < lo ? lo : (v > hi ? hi : v); };
     g_cfg.espBox = get("esp_box", "1") == "1";
     g_cfg.espName = get("esp_name", "1") == "1";
     g_cfg.espDistance = get("esp_distance", "1") == "1";
@@ -34,49 +40,49 @@ void config::Load(const char* path)
     g_cfg.espShowTeammates = get("esp_teammates", "0") == "1";
     g_cfg.espKit = get("esp_kit", "1") == "1";
     g_cfg.aimbotEnabled = get("aimbot_enabled", "1") == "1";
-    g_cfg.aimbotKey = std::stoi(get("aimbot_key", "88"));
-    g_cfg.aimbotMode = std::stoi(get("aimbot_mode", "1"));
-    g_cfg.aimbotFov = std::stof(get("aimbot_fov", "120"));
-    g_cfg.aimbotSmooth = std::stof(get("aimbot_smooth", "0.25"));
-    g_cfg.aimbotRange = std::stof(get("aimbot_range", "60"));
+    g_cfg.aimbotKey = toInt(get("aimbot_key", "88"), 88);
+    g_cfg.aimbotMode = clampi(toInt(get("aimbot_mode", "1"), 1), 0, 2);
+    g_cfg.aimbotFov = toFloat(get("aimbot_fov", "120"), 120.f);
+    g_cfg.aimbotSmooth = toFloat(get("aimbot_smooth", "0.25"), 0.25f);
+    g_cfg.aimbotRange = toFloat(get("aimbot_range", "60"), 60.f);
     if (g_cfg.aimbotRange > 150.f) g_cfg.aimbotRange = 150.f;
     g_cfg.aimbotSmoothing = get("aimbot_smoothing", "1") == "1";
-    g_cfg.aimbotSmoothStyle = std::stoi(get("aimbot_style", "1"));
+    g_cfg.aimbotSmoothStyle = clampi(toInt(get("aimbot_style", "1"), 1), 0, 1);
     g_cfg.aimbotShake = get("aimbot_shake", "0") == "1";
-    g_cfg.aimbotShakePx = std::stof(get("aimbot_shake_px", "3"));
+    g_cfg.aimbotShakePx = toFloat(get("aimbot_shake_px", "3"), 3.f);
     g_cfg.aimbotPrediction = get("aimbot_prediction", "0") == "1";
-    g_cfg.aimbotPredMs = std::stof(get("aimbot_pred_ms", "150"));
+    g_cfg.aimbotPredMs = toFloat(get("aimbot_pred_ms", "150"), 150.f);
     g_cfg.aimbotTeamCheck = get("aimbot_teamcheck", "1") == "1";
     g_cfg.aimbotKnockCheck = get("aimbot_knockcheck", "1") == "1";
     g_cfg.aimbotHealthCheck = get("aimbot_healthcheck", "1") == "1";
     g_cfg.aimbotRangeCheck = get("aimbot_rangecheck", "1") == "1";
     g_cfg.triggerbotEnabled = get("trigger_enabled", "1") == "1";
-    g_cfg.triggerKey = std::stoi(get("trigger_key", "88"));
-    g_cfg.triggerMode = std::stoi(get("trigger_mode", "1"));
-    g_cfg.triggerFov = std::stof(get("trigger_fov", "30"));
+    g_cfg.triggerKey = toInt(get("trigger_key", "88"), 88);
+    g_cfg.triggerMode = clampi(toInt(get("trigger_mode", "1"), 1), 0, 2);
+    g_cfg.triggerFov = toFloat(get("trigger_fov", "30"), 30.f);
     g_cfg.hitboxEnabled = get("hitbox_enabled", "1") == "1";
-    g_cfg.hitboxKey = std::stoi(get("hitbox_key", "67"));
-    g_cfg.hitboxMode = std::stoi(get("hitbox_mode", "2"));
-    g_cfg.hitboxMult = std::stof(get("hitbox_mult", "2.5"));
-    g_cfg.hitboxMaxStuds = std::stof(get("hitbox_max", "0"));
+    g_cfg.hitboxKey = toInt(get("hitbox_key", "67"), 67);
+    g_cfg.hitboxMode = clampi(toInt(get("hitbox_mode", "2"), 2), 0, 2);
+    g_cfg.hitboxMult = toFloat(get("hitbox_mult", "2.5"), 2.5f);
+    g_cfg.hitboxMaxStuds = toFloat(get("hitbox_max", "0"), 0.f);
     g_cfg.reachEnabled = get("reach_enabled", "0") == "1";
-    g_cfg.reachStuds = std::stof(get("reach_studs", "6.5"));
+    g_cfg.reachStuds = toFloat(get("reach_studs", "6.5"), 6.5f);
     g_cfg.hitfixEnabled = get("hitfix_enabled", "0") == "1";
     g_cfg.killauraEnabled = get("killaura_enabled", "0") == "1";
-    g_cfg.kaCps = std::stof(get("ka_cps", "12"));
-    g_cfg.kaSwingRange = std::stof(get("ka_swing", "18"));
-    g_cfg.kaAttackRange = std::stof(get("ka_attack", "18"));
-    g_cfg.kaAngle = std::stof(get("ka_angle", "90"));
-    g_cfg.kaSmooth = std::stof(get("ka_smooth", "0.35"));
+    g_cfg.kaCps = toFloat(get("ka_cps", "12"), 12.f);
+    g_cfg.kaSwingRange = toFloat(get("ka_swing", "18"), 18.f);
+    g_cfg.kaAttackRange = toFloat(get("ka_attack", "18"), 18.f);
+    g_cfg.kaAngle = toFloat(get("ka_angle", "90"), 90.f);
+    g_cfg.kaSmooth = toFloat(get("ka_smooth", "0.35"), 0.35f);
     g_cfg.kaRequireMouse = get("ka_requiremouse", "0") == "1";
     g_cfg.kaTeamCheck = get("ka_teamcheck", "1") == "1";
     g_cfg.streamproof = get("streamproof", "1") == "1";
-    g_cfg.menuKey = std::stoi(get("menu_key", "161"));
-    g_cfg.uiTheme = std::stoi(get("ui_theme", "0"));
-    g_cfg.uiLayout = std::stoi(get("ui_layout", "0"));
-    g_cfg.accent[0] = std::stof(get("accent_r", "0.35"));
-    g_cfg.accent[1] = std::stof(get("accent_g", "0.75"));
-    g_cfg.accent[2] = std::stof(get("accent_b", "1.0"));
+    g_cfg.menuKey = toInt(get("menu_key", "161"), 161);
+    g_cfg.uiTheme = clampi(toInt(get("ui_theme", "0"), 0), 0, 4);
+    g_cfg.uiLayout = clampi(toInt(get("ui_layout", "0"), 0), 0, 1);
+    g_cfg.accent[0] = toFloat(get("accent_r", "0.35"), 0.35f);
+    g_cfg.accent[1] = toFloat(get("accent_g", "0.75"), 0.75f);
+    g_cfg.accent[2] = toFloat(get("accent_b", "1.0"), 1.0f);
 }
 
 void config::Save(const char* path)
