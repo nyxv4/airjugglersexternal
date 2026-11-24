@@ -8,3 +8,4 @@ config/nyx.cfg
 nyx_debug.log
 imgui.ini
 internal/build/
+*.obj
