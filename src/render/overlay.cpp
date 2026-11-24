@@ -670,13 +670,43 @@ static const char* VkName(int vk)
     static char b[16]; snprintf(b, 16, "VK%02X", vk); return b;
 }
 
+// ---------------- bedwars gate ----------------
+// place ids: 6872265039 lobby, 6872274481 game
+static int g_isBedWars = -1; // -1 unknown
+static DWORD g_placeCheckAt = 0;
+
+static bool IsBedWars()
+{
+    if (!g_cfg.bedwarsOnly) return true;
+    DWORD now = GetTickCount();
+    if (now >= g_placeCheckAt)
+    {
+        g_placeCheckAt = now + 3000;
+        auto& w = sdk::Get();
+        if (w.dataModel)
+        {
+            uint64_t pid = g_mem.Read<uint64_t>(w.dataModel + OFF("DataModel", "PlaceId"));
+            g_isBedWars = (pid == 6872265039ULL || pid == 6872274481ULL) ? 1 : 0;
+            static bool logged = false;
+            if (!logged)
+            {
+                logged = true;
+                Log("[nyx] placeId=%llu bedwars=%d", (unsigned long long)pid, g_isBedWars);
+            }
+        }
+    }
+    return g_isBedWars == 1;
+}
+
 // ---------------- aimbot / triggerbot / hitbox ----------------
 
 static bool LocalToolIsBow();
+static void TryReachLunge(const Vec3& target);
 
 static void RunAimbot()
 {
     if (!g_cfg.aimbotEnabled || !g_mem.IsAttached()) return;
+    if (!IsBedWars()) return;
     static bool toggled = false, wasDown = false;
     if (!ActKey(g_cfg.aimbotKey, g_cfg.aimbotMode, toggled, wasDown)) return;
     if (g_cfg.aimbotKnockCheck && g_localKnocked) return;
@@ -684,7 +714,8 @@ static void RunAimbot()
 
     float cx = g_localX, cy = g_localY;
     const PlayerBox* best = nullptr;
-    float bestD = g_cfg.aimbotFov;
+    float bestMetric = 1e9f;
+    float bestD = 0.f;
     float tx = 0, ty = 0;
 
     for (auto& p : g_players)
@@ -710,7 +741,11 @@ static void RunAimbot()
 
         float dx = px - cx, dy = py - cy;
         float d = sqrtf(dx * dx + dy * dy);
-        if (d < bestD) { bestD = d; best = &p; tx = px; ty = py; }
+        if (d >= g_cfg.aimbotFov) continue;
+        // target priority: crosshair px / nearest studs / lowest hp
+        float metric = (g_cfg.aimbotSort == 1) ? p.dist :
+                       (g_cfg.aimbotSort == 2) ? p.health : d;
+        if (metric < bestMetric) { bestMetric = metric; bestD = d; best = &p; tx = px; ty = py; }
     }
     if (!best) { g_aimbotHadTarget = false; return; }
 
@@ -735,6 +770,7 @@ static void RunAimbot()
 static void RunTriggerbot()
 {
     if (!g_cfg.triggerbotEnabled || !g_mem.IsAttached()) return;
+    if (!IsBedWars()) return;
     static bool toggled = false, wasDown = false;
     // silent bow: auto-fires while a bow is equipped, no key needed
     if (!(LocalToolIsBow() && g_cfg.silentBow) &&
@@ -746,6 +782,7 @@ static void RunTriggerbot()
         float dx = p.headX - g_localX, dy = p.headY - g_localY;
         if (sqrtf(dx * dx + dy * dy) <= g_cfg.triggerFov)
         {
+            TryReachLunge(p.rootWorld);
             mouse_click();
             Sleep(60);
             break;
@@ -925,6 +962,89 @@ static void RunHitfix()
         g_mem.Write<Vec3>(g_hitfixPrim + OFF("Primitive", "AssemblyLinearVelocity"), { 0.f, vel.y, 0.f });
 }
 
+// ---------------- reach lunge ----------------
+// on click frames, briefly step the local HRP toward the target so the
+// game's own distance check sees you in range. the position is restored
+// ~90ms later so it can't become a permanent teleport - that's what keeps
+// hitreg intact while extending effective reach.
+
+struct ReachLunge { uintptr_t prim = 0; Vec3 orig{}; DWORD restoreAt = 0; };
+static ReachLunge g_lunge;
+
+static uintptr_t LocalHrpPrimitive()
+{
+    if (!g_localHrpAddr) return 0;
+    return g_mem.ReadPtr(g_localHrpAddr + OFF("BasePart", "Primitive"));
+}
+
+static void TryReachLunge(const Vec3& target)
+{
+    if (!g_cfg.reachEnabled || g_cfg.reachStuds <= 0.f || !g_mem.IsAttached()) return;
+    if (g_lunge.prim) return; // already lunging - don't overwrite the restore point
+    uintptr_t prim = LocalHrpPrimitive();
+    if (!prim) return;
+    Vec3 pos = g_mem.Read<Vec3>(prim + OFF("Primitive", "Position"));
+    float dx = target.x - pos.x, dz = target.z - pos.z;
+    float flat = sqrtf(dx * dx + dz * dz);
+    if (flat < 8.f || flat > 45.f) return; // on top of them / too far to matter
+    float step = g_cfg.reachStuds < flat ? g_cfg.reachStuds : flat;
+    Vec3 np{ pos.x + dx / flat * step, pos.y, pos.z + dz / flat * step };
+    g_lunge.prim = prim;
+    g_lunge.orig = pos;
+    g_lunge.restoreAt = GetTickCount() + 90;
+    g_mem.Write<Vec3>(prim + OFF("Primitive", "Position"), np);
+}
+
+static void UpdateReachLunge()
+{
+    if (!g_lunge.prim || !g_lunge.restoreAt) return;
+    if (GetTickCount() < g_lunge.restoreAt) return;
+    if (g_mem.IsAttached())
+        g_mem.Write<Vec3>(g_lunge.prim + OFF("Primitive", "Position"), g_lunge.orig);
+    g_lunge = {};
+}
+
+// ---------------- anti-void ----------------
+// remembers the highest Y you've stood at recently; if you drop far below
+// it (void/fall behind the map) you get teleported back up. the peak
+// re-baselines after 8s at low altitude so legit descents don't trigger it.
+
+static float g_voidPeakY = -1e9f;
+static DWORD g_voidPeakAt = 0;
+
+static void RunAntiVoid()
+{
+    if (!g_cfg.antiVoid || !g_mem.IsAttached() || !GameFocused())
+    {
+        g_voidPeakY = -1e9f;
+        return;
+    }
+    if (!g_localHrpAddr) return;
+    uintptr_t prim = LocalHrpPrimitive();
+    if (!prim) return;
+
+    DWORD now = GetTickCount();
+    Vec3 pos = g_mem.Read<Vec3>(prim + OFF("Primitive", "Position"));
+    if (pos.y > g_voidPeakY || now - g_voidPeakAt > 8000)
+    {
+        g_voidPeakY = pos.y;
+        g_voidPeakAt = now;
+    }
+    if (pos.y < g_voidPeakY - g_cfg.antiVoidDist)
+    {
+        Vec3 np{ pos.x, g_voidPeakY - 2.f, pos.z };
+        g_mem.Write<Vec3>(prim + OFF("Primitive", "Position"), np);
+        Vec3 zero{ 0.f, 0.f, 0.f };
+        g_mem.Write<Vec3>(prim + OFF("Primitive", "AssemblyLinearVelocity"), zero);
+        static DWORD lastLog = 0;
+        if (now - lastLog > 2000)
+        {
+            lastLog = now;
+            Log("[nyx] anti-void rescue y=%.1f -> %.1f", pos.y, np.y);
+        }
+    }
+}
+
 // ---------------- killaura ----------------
 // nyx1-style: acquire players in swing range, filter by facing angle,
 // aim at the target and click at CPS while inside attack range.
@@ -933,6 +1053,7 @@ static void RunHitfix()
 static void RunKillaura()
 {
     if (!g_cfg.killauraEnabled || !g_mem.IsAttached()) return;
+    if (!IsBedWars()) return;
     static bool toggled = false, wasDown = false;
     if (!ActKey(g_cfg.kaKey, g_cfg.kaMode, toggled, wasDown)) return;
     if (g_cfg.kaRequireMouse && !(GetAsyncKeyState(VK_LBUTTON) & 0x8000)) return;
@@ -980,11 +1101,10 @@ static void RunKillaura()
     float sx = best->headX - g_localX, sy = best->headY - g_localY;
     mouse_move((int)(sx * g_cfg.kaSmooth), (int)(sy * g_cfg.kaSmooth));
 
-    // click at CPS while inside attack range.
-    // schedule on a fixed grid (nextClick += interval) instead of
-    // re-anchoring to 'now' each click - the old way let frame hitches
-    // permanently push the schedule back, costing hits per second
-    if (bestDist <= g_cfg.kaAttackRange)
+    // click at CPS while inside attack range (+ reachStuds when reach is on
+    // - the lunge steps you into range for that click, then restores)
+    float clickRange = g_cfg.kaAttackRange + (g_cfg.reachEnabled ? g_cfg.reachStuds : 0.f);
+    if (bestDist <= clickRange)
     {
         static ULONGLONG nextClick = 0;
         ULONGLONG now = GetTickCount64();
@@ -993,6 +1113,7 @@ static void RunKillaura()
         {
             nextClick += (ULONGLONG)interval;
             if (now > nextClick + (ULONGLONG)interval) nextClick = now; // dropped >1 slot, resync
+            if (bestDist > g_cfg.kaAttackRange) TryReachLunge(best->rootWorld);
             mouse_click();
         }
     }
@@ -1178,6 +1299,9 @@ static void MenuAim()
     ImGui::Checkbox("Enable prediction", &g_cfg.aimbotPrediction);
     if (g_cfg.aimbotPrediction)
         ImGui::SliderFloat("Prediction (ms)", &g_cfg.aimbotPredMs, 0.f, 500.f, "%.0f");
+    const char* sorts[] = { "Crosshair", "Nearest", "Lowest HP" };
+    ImGui::Combo("Target", &g_cfg.aimbotSort, sorts, 3);
+    ImGui::Checkbox("BedWars only", &g_cfg.bedwarsOnly);
     ImGui::SliderFloat("Range (studs)", &g_cfg.aimbotRange, 5.f, 150.f, "%.0f");
     ImGui::Combo("Activation", &g_cfg.aimbotMode, kActModes, 3);
     RebindButton("Key", &g_cfg.aimbotKey);
@@ -1224,6 +1348,11 @@ static void MenuHitbox()
     ImGui::Checkbox("Require mouse down##ka", &g_cfg.kaRequireMouse);
     ImGui::Checkbox("Team check##ka", &g_cfg.kaTeamCheck);
     ImGui::TextDisabled("Auto-aims and clicks at targets in range/angle");
+    ImGui::Separator();
+    ImGui::Text("Reach");
+    ImGui::Checkbox("Enabled##reach", &g_cfg.reachEnabled);
+    ImGui::SliderFloat("Studs##reach", &g_cfg.reachStuds, 0.f, 12.f, "%.1f");
+    ImGui::TextDisabled("Extends melee reach on click - auto-restores, hitreg safe");
 }
 
 static void MenuVisuals()
@@ -1242,6 +1371,12 @@ static void MenuMisc()
 {
     ImGui::Checkbox("Streamproof", &g_cfg.streamproof);
     if (g_cfg.streamproof) g_overlay.ApplyStreamproof();
+    ImGui::Separator();
+    ImGui::Text("World");
+    ImGui::Checkbox("Anti-void", &g_cfg.antiVoid);
+    if (g_cfg.antiVoid)
+        ImGui::SliderFloat("Fall distance", &g_cfg.antiVoidDist, 10.f, 120.f, "%.0f studs");
+    ImGui::TextDisabled("Teleports you back up if you fall too far");
     ImGui::Separator();
     ImGui::Text("Interface");
     const char* themes[] = { "Midnight", "Incognito", "Neon", "Light", "Vape" };
@@ -1544,6 +1679,7 @@ void Overlay::Run()
             g_players.clear();
         }
 
+        UpdateReachLunge();
         if (focused)
         {
             RunAimbot();
@@ -1551,6 +1687,7 @@ void Overlay::Run()
             RunHitbox();
             RunHitfix();
             RunKillaura();
+            RunAntiVoid();
         }
 
         ImGui_ImplDX11_NewFrame();

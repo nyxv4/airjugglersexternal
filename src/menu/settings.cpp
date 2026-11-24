@@ -77,6 +77,12 @@ void config::Load(const char* path)
     g_cfg.kaSmooth = toFloat(get("ka_smooth", "0.35"), 0.35f);
     g_cfg.kaRequireMouse = get("ka_requiremouse", "0") == "1";
     g_cfg.kaTeamCheck = get("ka_teamcheck", "1") == "1";
+    g_cfg.aimbotSort = clampi(toInt(get("aimbot_sort", "0"), 0), 0, 2);
+    g_cfg.bedwarsOnly = get("bedwars_only", "1") == "1";
+    g_cfg.antiVoid = get("anti_void", "0") == "1";
+    g_cfg.antiVoidDist = toFloat(get("anti_void_dist", "40"), 40.f);
+    g_cfg.reachEnabled = get("reach_enabled", "0") == "1";
+    g_cfg.reachStuds = toFloat(get("reach_studs", "4"), 4.f);
     g_cfg.streamproof = get("streamproof", "1") == "1";
     g_cfg.menuKey = toInt(get("menu_key", "161"), 161);
     g_cfg.uiTheme = clampi(toInt(get("ui_theme", "0"), 0), 0, 4);
@@ -134,6 +140,12 @@ void config::Save(const char* path)
     f << "ka_smooth=" << g_cfg.kaSmooth << "\n";
     f << "ka_requiremouse=" << g_cfg.kaRequireMouse << "\n";
     f << "ka_teamcheck=" << g_cfg.kaTeamCheck << "\n";
+    f << "aimbot_sort=" << g_cfg.aimbotSort << "\n";
+    f << "bedwars_only=" << g_cfg.bedwarsOnly << "\n";
+    f << "anti_void=" << g_cfg.antiVoid << "\n";
+    f << "anti_void_dist=" << g_cfg.antiVoidDist << "\n";
+    f << "reach_enabled=" << g_cfg.reachEnabled << "\n";
+    f << "reach_studs=" << g_cfg.reachStuds << "\n";
     f << "streamproof=" << g_cfg.streamproof << "\n";
     f << "menu_key=" << g_cfg.menuKey << "\n";
     f << "ui_theme=" << g_cfg.uiTheme << "\n";

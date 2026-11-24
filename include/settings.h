@@ -67,6 +67,20 @@ struct Settings
     bool kaRequireMouse = false; // only while LMB held
     bool kaTeamCheck = true;
 
+    // target priority: 0 = crosshair, 1 = nearest, 2 = lowest hp
+    int aimbotSort = 0;
+    // gate all combat features to bedwars place ids only
+    bool bedwarsOnly = true;
+
+    // anti-void: teleport back up if you fall too far below your peak
+    bool antiVoid = false;
+    float antiVoidDist = 40.f;  // studs below peak before rescue
+
+    // reach: brief position lunge toward the target on click frames so
+    // swings connect past normal range without breaking hitreg
+    bool reachEnabled = false;
+    float reachStuds = 4.f;
+
     // misc
     bool streamproof = true;
     bool menuVisible = false;
@@ -80,7 +94,7 @@ struct Settings
 
 extern Settings g_cfg;
 
-inline const char* NYX_VERSION = "24";
+inline const char* NYX_VERSION = "25";
 
 namespace config
 {
