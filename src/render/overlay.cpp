@@ -422,6 +422,13 @@ static void ScanNpcs()
 
 struct ObjEspDef { const char* key; const char* label; ImU32 col; };
 static const ObjEspDef kObjEsp[] = {
+    // generators + ore blocks first (specific names win)
+    { "diamond_oregenerator", "DIAMOND GEN", IM_COL32(85, 200, 255, 255) },
+    { "emerald_oregenerator", "EMERALD GEN", IM_COL32(0, 255, 100, 255) },
+    { "iron_oregenerator", "IRON GEN", IM_COL32(200, 200, 200, 255) },
+    { "oregenerator", "ORE GEN", IM_COL32(200, 200, 200, 255) },
+    { "teamgen", "TEAM GEN", IM_COL32(255, 255, 255, 255) },
+    { "iron_ore_mesh_block", "IRON ORE", IM_COL32(190, 190, 200, 255) },
     { "hidden-metal", "METAL", IM_COL32(240, 200, 80, 255) },
     { "treeorb", "ELDER ORB", IM_COL32(90, 220, 120, 255) },
     { "natures_essence", "ESSENCE", IM_COL32(120, 230, 140, 255) },
@@ -447,8 +454,9 @@ static const ObjEspDef kObjEsp[] = {
     { "venom_trap", "VENOM TRAP", IM_COL32(120, 200, 60, 255) },
 };
 
-struct ObjEspEntry { uintptr_t part; const ObjEspDef* def; };
+struct ObjEspEntry { uintptr_t part; char label[32]; ImU32 col; };
 static std::vector<ObjEspEntry> g_objEsp;
+static std::vector<ObjEspEntry> g_itemDrops; // workspace.ItemDrops resources
 
 static bool IsPartClass(const std::string& c)
 {
@@ -498,7 +506,9 @@ static void ScanObjectEsp()
                     if (part && !seenParts.count(part))
                     {
                         seenParts.insert(part);
-                        g_objEsp.push_back({ part, &d });
+                        ObjEspEntry e{ part, "", d.col };
+                        snprintf(e.label, sizeof(e.label), "%s", d.label);
+                        g_objEsp.push_back(e);
                     }
                     break; // first matching def wins for this instance
                 }
@@ -510,11 +520,68 @@ static void ScanObjectEsp()
     }
 }
 
-static void DrawObjEsp(ImDrawList* dl)
+// workspace.ItemDrops holds dropped resources - children are named
+// exactly 'diamond'/'emerald'/'iron'/etc. scanned on a faster cadence
+// than the big object sweep since loot moves
+static const char* kResourceNames[] = { "diamond", "emerald", "iron", "gold", "wood", "stone", "fiber" };
+static const char* kResourceExcl[] = {
+    "_sword", "_axe", "_pickaxe", "_dao", "_bow", "_crossbow", "_rod",
+    "_boots", "_chestplate", "_leggings", "_helmet", "_trap", "_kit",
+    "_potion", "_snowball", "_pearl", "_grenade", "_shield", "_shear",
+    "_launcher", "_hammer", "_scythe", "_fishing", "_slot", "_machine"
+};
+
+static ImU32 ResourceColor(const std::string& n)
 {
-    if (!g_cfg.objEsp || g_objEsp.empty()) return;
+    if (n.find("diamond") != std::string::npos) return IM_COL32(85, 200, 255, 255);
+    if (n.find("emerald") != std::string::npos) return IM_COL32(0, 255, 100, 255);
+    if (n.find("gold") != std::string::npos) return IM_COL32(240, 200, 80, 255);
+    return IM_COL32(200, 200, 200, 255); // iron/wood/stone/fiber
+}
+
+static void ScanItemDrops()
+{
+    g_itemDrops.clear();
+    auto& w = sdk::Get();
+    if (!w.workspace) return;
+
+    uintptr_t folder = 0;
+    for (auto& c : Instance(w.workspace).GetChildren())
+    {
+        std::string cn = c.GetName();
+        for (auto& ch : cn) ch = (char)tolower((unsigned char)ch);
+        if (cn == "itemdrops") { folder = c.addr; break; }
+    }
+    if (!folder) return;
+
+    for (auto& c : Instance(folder).GetChildren())
+    {
+        std::string cn = c.GetName();
+        for (auto& ch : cn) ch = (char)tolower((unsigned char)ch);
+        bool match = false;
+        for (auto rn : kResourceNames)
+            if (cn == rn) { match = true; break; }
+        if (!match && cn.find("ore") != std::string::npos) match = true;
+        if (!match) continue;
+        for (auto ex : kResourceExcl)
+            if (cn.find(ex) != std::string::npos) { match = false; break; }
+        if (!match) continue;
+
+        uintptr_t part = ResolveObjPart(c.addr);
+        if (part)
+        {
+            ObjEspEntry e{ part, "", ResourceColor(cn) };
+            for (auto& ch : cn) ch = (char)toupper((unsigned char)ch);
+            snprintf(e.label, sizeof(e.label), "%s", cn.c_str());
+            g_itemDrops.push_back(e);
+        }
+    }
+}
+
+static void DrawObjEntries(ImDrawList* dl, const std::vector<ObjEspEntry>& list)
+{
     Vec3 lpos = CachedLocalPos();
-    for (auto& e : g_objEsp)
+    for (auto& e : list)
     {
         if (Instance::PartTransparency(e.part) > 0.9f) continue;
         Vec3 pos = Instance::PartPosition(e.part);
@@ -525,13 +592,20 @@ static void DrawObjEsp(ImDrawList* dl)
         Vec2 s;
         if (!sdk::WorldToScreen(pos, s) || s.x < 0.f) continue;
 
-        ImU32 c = e.def->col;
+        ImU32 c = e.col;
         dl->AddQuad({ s.x, s.y - 6.f }, { s.x + 6.f, s.y }, { s.x, s.y + 6.f }, { s.x - 6.f, s.y }, c, 1.5f);
         char buf[64];
-        snprintf(buf, sizeof(buf), "%s %.0fm", e.def->label, dist);
+        snprintf(buf, sizeof(buf), "%s %.0fm", e.label, dist);
         ImVec2 ts = ImGui::CalcTextSize(buf);
         dl->AddText({ s.x - ts.x / 2.f, s.y + 8.f }, c, buf);
     }
+}
+
+static void DrawObjEsp(ImDrawList* dl)
+{
+    if (!g_cfg.objEsp) return;
+    DrawObjEntries(dl, g_objEsp);
+    DrawObjEntries(dl, g_itemDrops);
 }
 
 static void CollectPlayers()
@@ -2034,11 +2108,18 @@ void Overlay::Run()
             // on a slow cadence, positions are read per-frame afterwards
             if (focused && g_cfg.objEsp)
             {
-                static DWORD lastObjScan = 0;
-                if (GetTickCount() - lastObjScan > 4000)
+                static DWORD lastObjScan = 0, lastDropScan = 0;
+                DWORD now = GetTickCount();
+                if (now - lastObjScan > 4000)
                 {
-                    lastObjScan = GetTickCount();
+                    lastObjScan = now;
                     ScanObjectEsp();
+                }
+                // loot moves fast - rescan drops ~1.5x more often
+                if (now - lastDropScan > 2500)
+                {
+                    lastDropScan = now;
+                    ScanItemDrops();
                 }
             }
 
@@ -2072,6 +2153,7 @@ void Overlay::Run()
             g_cache.clear();
             g_npcs.clear();
             g_objEsp.clear();
+            g_itemDrops.clear();
             g_localHrpAddr = 0;
             g_hitboxActive = false;
             RestoreHitboxes();
