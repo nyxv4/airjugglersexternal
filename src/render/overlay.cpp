@@ -53,7 +53,7 @@ struct PlayerBox
 {
     float x1, y1, x2, y2;
     float headX, headY;
-    Vec3 headWorld, headVel;
+    Vec3 headWorld, headVel, rootWorld;
     std::string name;
     float health, maxHealth;
     float dist;
@@ -284,6 +284,7 @@ static void CollectPlayers()
         pb.name = cp.name;
         pb.headAddr = cp.head;
         pb.headWorld = hp;
+        pb.rootWorld = root;
         {
             uintptr_t hprim = g_mem.ReadPtr(cp.head + OFF("BasePart", "Primitive"));
             pb.headVel = hprim ? g_mem.Read<Vec3>(hprim + OFF("Primitive", "AssemblyLinearVelocity")) : Vec3{};
@@ -324,6 +325,8 @@ static void CollectPlayers()
 
 // local HRP cached the same way - LocalPlayerPos() re-enumerates
 // character children every call which is the other big RPM cost
+static uintptr_t g_localHrpAddr = 0;
+
 static Vec3 CachedLocalPos()
 {
     static uintptr_t cachedChar = 0, cachedHrp = 0;
@@ -347,6 +350,7 @@ static Vec3 CachedLocalPos()
             }
         }
     }
+    g_localHrpAddr = cachedHrp;
     return cachedHrp ? Instance::PartPosition(cachedHrp) : Vec3{};
 }
 
@@ -750,6 +754,72 @@ static void RunHitfix()
         g_mem.Write<Vec3>(g_hitfixPrim + OFF("Primitive", "AssemblyLinearVelocity"), { 0.f, vel.y, 0.f });
 }
 
+// ---------------- killaura ----------------
+// nyx1-style: acquire players in swing range, filter by facing angle,
+// aim at the target and click at CPS while inside attack range.
+// (scripts use firetouchinterest for hits - externals must click)
+
+static void RunKillaura()
+{
+    if (!g_cfg.killauraEnabled || !g_mem.IsAttached()) return;
+    if (g_cfg.kaRequireMouse && !(GetAsyncKeyState(VK_LBUTTON) & 0x8000)) return;
+    if (g_localKnocked) return;
+    if (g_players.empty() || !g_localHrpAddr) return;
+
+    Vec3 lpos = CachedLocalPos();
+    if (lpos.x == 0.f && lpos.y == 0.f && lpos.z == 0.f) return;
+
+    // local facing from HRP rotation matrix (look = -Z column)
+    uintptr_t lprim = g_mem.ReadPtr(g_localHrpAddr + OFF("BasePart", "Primitive"));
+    if (!lprim) return;
+    float r[9];
+    for (int i = 0; i < 9; i++) r[i] = g_mem.Read<float>(lprim + OFF("Primitive", "Rotation") + i * 4);
+    float lx = -r[2], lz = -r[8];
+    float llen = sqrtf(lx * lx + lz * lz);
+    if (llen < 0.001f) return;
+    lx /= llen; lz /= llen;
+
+    const PlayerBox* best = nullptr;
+    float bestDist = 1e9f;
+    for (auto& p : g_players)
+    {
+        if (p.teammate && g_cfg.kaTeamCheck) continue;
+        if (p.health <= 0.f) continue;
+
+        float dx = p.rootWorld.x - lpos.x, dy = p.rootWorld.y - lpos.y, dz = p.rootWorld.z - lpos.z;
+        float dist = sqrtf(dx * dx + dy * dy + dz * dz);
+        if (dist > g_cfg.kaSwingRange) continue;
+
+        // flat facing angle vs target direction
+        float flat = sqrtf(dx * dx + dz * dz);
+        if (flat > 0.01f && g_cfg.kaAngle < 360.f)
+        {
+            float dot = (lx * dx + lz * dz) / flat;
+            if (dot > 1.f) dot = 1.f; if (dot < -1.f) dot = -1.f;
+            float angDeg = acosf(dot) * 57.29578f;
+            if (angDeg > g_cfg.kaAngle / 2.f) continue;
+        }
+        if (dist < bestDist) { bestDist = dist; best = &p; }
+    }
+    if (!best) return;
+
+    // aim at the target's head (screen space)
+    float sx = best->headX - g_localX, sy = best->headY - g_localY;
+    mouse_move((int)(sx * g_cfg.kaSmooth), (int)(sy * g_cfg.kaSmooth));
+
+    // click at CPS while inside attack range
+    if (bestDist <= g_cfg.kaAttackRange)
+    {
+        static ULONGLONG nextClick = 0;
+        ULONGLONG now = GetTickCount64();
+        if (now >= nextClick)
+        {
+            nextClick = now + (ULONGLONG)(1000.0 / (g_cfg.kaCps > 0.f ? g_cfg.kaCps : 1.f));
+            mouse_click();
+        }
+    }
+}
+
 // ---------------- key rebind ----------------
 
 static int* g_rebindTarget = nullptr;
@@ -978,6 +1048,19 @@ static void MenuVisuals()
     ImGui::Checkbox("Kit ESP", &g_cfg.espKit);
 }
 
+static void MenuKillaura()
+{
+    ImGui::Checkbox("Enabled", &g_cfg.killauraEnabled);
+    ImGui::SliderFloat("CPS", &g_cfg.kaCps, 1.f, 40.f, "%.0f");
+    ImGui::SliderFloat("Swing range (studs)", &g_cfg.kaSwingRange, 1.f, 30.f, "%.0f");
+    ImGui::SliderFloat("Attack range (studs)", &g_cfg.kaAttackRange, 1.f, 30.f, "%.0f");
+    ImGui::SliderFloat("Max angle", &g_cfg.kaAngle, 1.f, 360.f, "%.0f");
+    ImGui::SliderFloat("Aim smooth", &g_cfg.kaSmooth, 0.05f, 1.f, "%.2f");
+    ImGui::Checkbox("Require mouse down", &g_cfg.kaRequireMouse);
+    ImGui::Checkbox("Team check", &g_cfg.kaTeamCheck);
+    ImGui::TextDisabled("Auto-aims and clicks at targets in range/angle");
+}
+
 static void MenuMisc()
 {
     ImGui::Checkbox("Streamproof", &g_cfg.streamproof);
@@ -998,6 +1081,21 @@ static void MenuMisc()
     ImGui::Text("Roblox PID: %lu", g_mem.pid);
     ImGui::Text("Base: 0x%llx", (unsigned long long)g_mem.base);
     ImGui::Text("Offsets: %s", offsets::Ready() ? offsets::ClientVersion().c_str() : "fetching...");
+    ImGui::Separator();
+    ImGui::Text("Configs");
+    static char cfgName[64] = "default";
+    ImGui::InputText("Name", cfgName, sizeof(cfgName));
+    if (ImGui::Button("Save", { 80, 0 }))
+    {
+        char p[MAX_PATH]; snprintf(p, sizeof(p), "config\\%s.cfg", cfgName);
+        config::Save(p); config::Save();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Load", { 80, 0 }))
+    {
+        char p[MAX_PATH]; snprintf(p, sizeof(p), "config\\%s.cfg", cfgName);
+        config::Load(p); config::Save();
+    }
     ImGui::Separator();
     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.1f, 0.1f, 1.f));
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.8f, 0.15f, 0.15f, 1.f));
@@ -1036,8 +1134,8 @@ static void DrawMenu()
         ImGui::TextDisabled("v%s", NYX_VERSION);
         ImGui::Separator();
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
-        const char* names[] = { "AIM ASSIST", "TRIGGERBOT", "HITBOX", "VISUALS", "MISC" };
-        for (int i = 0; i < 5; i++)
+        const char* names[] = { "AIM ASSIST", "TRIGGERBOT", "HITBOX", "KILLAURA", "VISUALS", "MISC" };
+        for (int i = 0; i < 6; i++)
         {
             if (section == i)
                 ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_CheckMark]);
@@ -1053,8 +1151,9 @@ static void DrawMenu()
         case 0: MenuAim(); break;
         case 1: MenuTrigger(); break;
         case 2: MenuHitbox(); break;
-        case 3: MenuVisuals(); break;
-        case 4: MenuMisc(); break;
+        case 3: MenuKillaura(); break;
+        case 4: MenuVisuals(); break;
+        case 5: MenuMisc(); break;
         }
         ImGui::EndChild();
     }
@@ -1066,6 +1165,7 @@ static void DrawMenu()
             if (ImGui::BeginTabItem("Aim Assist")) { MenuAim(); ImGui::EndTabItem(); }
             if (ImGui::BeginTabItem("Triggerbot")) { MenuTrigger(); ImGui::EndTabItem(); }
             if (ImGui::BeginTabItem("Hitbox")) { MenuHitbox(); ImGui::EndTabItem(); }
+            if (ImGui::BeginTabItem("Killaura")) { MenuKillaura(); ImGui::EndTabItem(); }
             if (ImGui::BeginTabItem("Visuals")) { MenuVisuals(); ImGui::EndTabItem(); }
             if (ImGui::BeginTabItem("Misc")) { MenuMisc(); ImGui::EndTabItem(); }
             ImGui::EndTabBar();
@@ -1278,6 +1378,7 @@ void Overlay::Run()
             RunHitbox();
             RunReach();
             RunHitfix();
+            RunKillaura();
         }
 
         ImGui_ImplDX11_NewFrame();

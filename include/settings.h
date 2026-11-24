@@ -54,6 +54,16 @@ struct Settings
     // consistently regardless of ping/fps
     bool hitfixEnabled = false;
 
+    // killaura (auto-aim + click at CPS within range/angle)
+    bool killauraEnabled = false;
+    float kaCps = 12.f;          // attacks per second
+    float kaSwingRange = 18.f;   // target acquisition range (studs)
+    float kaAttackRange = 18.f;  // click range (studs)
+    float kaAngle = 90.f;        // max facing angle, 1-360
+    float kaSmooth = 0.35f;      // aim pull strength 0..1
+    bool kaRequireMouse = false; // only while LMB held
+    bool kaTeamCheck = true;
+
     // misc
     bool streamproof = true;
     bool menuVisible = false;
@@ -67,7 +77,7 @@ struct Settings
 
 extern Settings g_cfg;
 
-inline const char* NYX_VERSION = "15";
+inline const char* NYX_VERSION = "16";
 
 namespace config
 {
