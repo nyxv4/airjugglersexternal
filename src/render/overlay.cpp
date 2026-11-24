@@ -674,6 +674,22 @@ static const char* VkName(int vk)
 // place ids: 6872265039 lobby, 6872274481 game
 static int g_isBedWars = -1; // -1 unknown
 static DWORD g_placeCheckAt = 0;
+static uint64_t g_lastPlaceId = 0;
+
+static bool IsBedWarsId(uint64_t pid)
+{
+    // bedwars lobby + game + a few related experiences
+    switch (pid)
+    {
+    case 6872265039ULL: // bedwars lobby
+    case 6872274481ULL: // bedwars game
+    case 6872282384ULL:
+    case 6872283856ULL:
+    case 11627040162ULL: // bedwars (newer place id)
+        return true;
+    }
+    return false;
+}
 
 static bool IsBedWars()
 {
@@ -686,16 +702,27 @@ static bool IsBedWars()
         if (w.dataModel)
         {
             uint64_t pid = g_mem.Read<uint64_t>(w.dataModel + OFF("DataModel", "PlaceId"));
-            g_isBedWars = (pid == 6872265039ULL || pid == 6872274481ULL) ? 1 : 0;
+            g_lastPlaceId = pid;
+            // pid==0 means the offset/read failed - stay "unknown" and
+            // DON'T gate, otherwise a broken offset kills all combat
+            // features silently (this is what made everything feel dead)
+            g_isBedWars = (pid == 0) ? -1 : (IsBedWarsId(pid) ? 1 : 0);
             static bool logged = false;
             if (!logged)
             {
                 logged = true;
-                Log("[nyx] placeId=%llu bedwars=%d", (unsigned long long)pid, g_isBedWars);
+                Log("[nyx] v%s placeId=%llu bedwars=%d", NYX_VERSION,
+                    (unsigned long long)pid, g_isBedWars);
+            }
+            static DWORD lastBlockLog = 0;
+            if (g_isBedWars == 0 && now - lastBlockLog > 10000)
+            {
+                lastBlockLog = now;
+                Log("[nyx] combat features blocked: placeId=%llu is not bedwars", (unsigned long long)pid);
             }
         }
     }
-    return g_isBedWars == 1;
+    return g_isBedWars != 0; // unknown (-1) -> allow, don't break on read fail
 }
 
 // ---------------- aimbot / triggerbot / hitbox ----------------
@@ -796,6 +823,7 @@ struct HitboxEntry { uintptr_t prim; Vec3 orig; Vec3 expected; };
 static std::unordered_map<uintptr_t, HitboxEntry> g_hitboxMap;
 static std::vector<uintptr_t> g_hitboxParts;
 static DWORD g_hitboxScanAt = 0;
+static bool g_hitboxActive = false; // for the on-screen indicator
 
 static Vec3 HitboxExpected(const Vec3& orig)
 {
@@ -829,9 +857,11 @@ static void RunHitbox()
     {
         if (wasHeld) RestoreHitboxes();
         wasHeld = false;
+        g_hitboxActive = false;
         return;
     }
     wasHeld = true;
+    g_hitboxActive = true;
 
     DWORD now = GetTickCount();
     auto& w = sdk::Get();
@@ -1330,6 +1360,8 @@ static void MenuAim()
     ImGui::SliderFloat("Range (studs)", &g_cfg.aimbotRange, 5.f, 150.f, "%.0f");
     ImGui::Combo("Activation", &g_cfg.aimbotMode, kActModes, 3);
     RebindButton("Key", &g_cfg.aimbotKey);
+    if (g_cfg.aimbotMode == 1)
+        ImGui::TextDisabled("Press %s to toggle aim assist", VkName(g_cfg.aimbotKey));
     ImGui::Checkbox("Silent aim (bow)", &g_cfg.silentBow);
     if (g_cfg.silentBow)
         ImGui::TextDisabled("Instant snap + auto-shoot while bow/crossbow/slingshot equipped");
@@ -1372,6 +1404,8 @@ static void MenuHitbox()
     ImGui::SliderFloat("Click within px", &g_cfg.kaClickPx, 2.f, 80.f, "%.0f");
     ImGui::Combo("Activation##ka", &g_cfg.kaMode, kActModes, 3);
     RebindButton("Key##ka", &g_cfg.kaKey);
+    if (g_cfg.kaMode == 1)
+        ImGui::TextDisabled("Press %s to toggle killaura", VkName(g_cfg.kaKey));
     ImGui::Checkbox("Require mouse down##ka", &g_cfg.kaRequireMouse);
     ImGui::Checkbox("Team check##ka", &g_cfg.kaTeamCheck);
     ImGui::TextDisabled("Auto-aims and clicks at targets in range/angle");
@@ -1417,6 +1451,9 @@ static void MenuMisc()
     ImGui::TextDisabled("INSERT still toggles this menu");
     ImGui::Text("Roblox PID: %lu", g_mem.pid);
     ImGui::Text("Base: 0x%llx", (unsigned long long)g_mem.base);
+    ImGui::Text("Version: v%s", NYX_VERSION);
+    ImGui::Text("PlaceId: %llu", (unsigned long long)g_lastPlaceId);
+    ImGui::Text("BedWars: %s", g_isBedWars == 1 ? "yes" : (g_isBedWars == 0 ? "NO (combat off)" : "unknown"));
     ImGui::Text("Offsets: %s", offsets::Ready() ? offsets::ClientVersion().c_str() : "fetching...");
     ImGui::Separator();
     ImGui::Text("Configs");
@@ -1612,6 +1649,7 @@ void Overlay::SetClickThrough(bool clickThrough)
 
 void Overlay::Run()
 {
+    Log("[nyx] === v%s starting ===", NYX_VERSION);
     MSG msg;
     while (g_running)
     {
@@ -1723,6 +1761,12 @@ void Overlay::Run()
 
         ImDrawList* bg = ImGui::GetBackgroundDrawList();
         if (g_mem.IsAttached() && focused) DrawEsp(bg);
+        // feature status indicators - hitbox/reach are invisible by design
+        // so show a small marker so you can tell they're actually running
+        if (g_hitboxActive)
+            bg->AddText({ 12.f, 12.f }, IM_COL32(120, 220, 255, 220), "HITBOX");
+        if (g_cfg.reachEnabled && g_lunge.prim)
+            bg->AddText({ 12.f, 30.f }, IM_COL32(120, 220, 255, 220), "REACH");
         if (g_cfg.menuVisible) DrawMenu();
 
         ImGui::Render();
