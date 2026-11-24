@@ -87,7 +87,7 @@ struct Settings
 
 extern Settings g_cfg;
 
-inline const char* NYX_VERSION = "41";
+inline const char* NYX_VERSION = "42";
 
 namespace config
 {

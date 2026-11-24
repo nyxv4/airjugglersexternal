@@ -2123,10 +2123,11 @@ static void CardWorld()
     ImGui::Separator();
     ImGui::TextDisabled("Coming soon");
     ImGui::BeginDisabled();
-    ImGui::Checkbox("Anti-fall", nullptr);
-    ImGui::Checkbox("No-slow", nullptr);
-    ImGui::Checkbox("Fast break", nullptr);
-    ImGui::Checkbox("Auto bridge", nullptr);
+    static bool dummyToggles[4] = {};
+    ImGui::Checkbox("Anti-fall", &dummyToggles[0]);
+    ImGui::Checkbox("No-slow", &dummyToggles[1]);
+    ImGui::Checkbox("Fast break", &dummyToggles[2]);
+    ImGui::Checkbox("Auto bridge", &dummyToggles[3]);
     ImGui::EndDisabled();
 }
 
