@@ -64,8 +64,10 @@ int wmain(int argc, wchar_t** argv)
 static int Run(int argc, wchar_t** argv)
 {
     wchar_t dllPath[MAX_PATH];
+    const wchar_t* procName = L"RobloxPlayerBeta.exe";
     if (argc > 1) wcscpy_s(dllPath, argv[1]);
     else wcscpy_s(dllPath, L"NyxInternal.dll");
+    if (argc > 2) procName = argv[2]; // optional: test on any process
 
     // make path absolute
     wchar_t full[MAX_PATH];
@@ -74,8 +76,8 @@ static int Run(int argc, wchar_t** argv)
 
     EnableDebugPriv();
 
-    DWORD pid = FindPid(L"RobloxPlayerBeta.exe");
-    if (!pid) pid = FindPid(L"RobloxPlayer.exe");
+    DWORD pid = FindPid(procName);
+    if (!pid && wcscmp(procName, L"RobloxPlayerBeta.exe") == 0) pid = FindPid(L"RobloxPlayer.exe");
     if (!pid) { Out("roblox not running\n"); return 1; }
     Out("roblox pid=%lu\n", pid);
 

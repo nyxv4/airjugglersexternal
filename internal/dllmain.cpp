@@ -278,6 +278,7 @@ BOOL APIENTRY DllMain(HMODULE mod, DWORD reason, LPVOID)
 {
     if (reason == DLL_PROCESS_ATTACH)
     {
+        Log("[nyx-int] DllMain entered");
         DisableThreadLibraryCalls(mod);
         CreateThread(nullptr, 0, Main, nullptr, 0, nullptr);
     }
