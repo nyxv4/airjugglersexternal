@@ -46,12 +46,6 @@ struct Settings
     bool aimbotHealthCheck = true;
     bool aimbotRangeCheck = true;
 
-    // triggerbot (hold key)
-    bool triggerbotEnabled = true;
-    int triggerKey = 0x58;
-    int triggerMode = 1;
-    float triggerFov = 30.f;
-
     // hitbox expander
     bool hitboxEnabled = true;
     int hitboxKey = 0x43;        // C
@@ -63,26 +57,7 @@ struct Settings
     // consistently regardless of ping/fps
     bool hitfixEnabled = false;
 
-    // silent aim for bows: snaps instantly + auto-shoots while a
-    // bow/crossbow/slingshot is equipped (closest external equivalent -
-    // true silent aim needs code inside the game)
-    bool silentBow = false;
-
-    // killaura (auto-aim + click at CPS within range/angle)
-    bool killauraEnabled = false;
-    int kaKey = 0x56;             // V
-    int kaMode = 1;               // 0=hold 1=toggle 2=always
-    float kaCps = 20.f;          // attacks per second (slider to 40)
-    float kaSwingRange = 18.f;   // target acquisition range (studs)
-    float kaAttackRange = 18.f;  // click range (studs)
-    float kaAngle = 90.f;        // max facing angle, 1-360
-    float kaSmooth = 0.35f;      // aim pull strength 0..1
-    float kaPredMs = 80.f;       // lead target by velocity * ms (hitreg vs movers)
-    float kaClickPx = 25.f;      // only click when crosshair is this close to target
-    bool kaRequireMouse = false; // only while LMB held
-    bool kaTeamCheck = true;
-
-    // target priority: 0 = crosshair, 1 = nearest, 2 = lowest hp
+    // target priority: 0 = crosshair, 1 = nearest, 2 = lowest hp, 3 = none
     int aimbotSort = 0;
     // gate all combat features to bedwars place ids only
     bool bedwarsOnly = true;
@@ -109,7 +84,7 @@ struct Settings
 
 extern Settings g_cfg;
 
-inline const char* NYX_VERSION = "38";
+inline const char* NYX_VERSION = "39";
 
 namespace config
 {

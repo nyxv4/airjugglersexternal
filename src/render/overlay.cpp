@@ -82,7 +82,7 @@ static bool g_localKnocked = false;
 static bool g_aimbotHadTarget = false;
 // live feature state for the on-screen status line - set inside each
 // Run* function right after its activation check passes
-static bool g_aimbotActive = false, g_kaActive = false, g_trigActive = false;
+static bool g_aimbotActive = false;
 static Vec2 g_localScreen;
 static float g_localX, g_localY; // screen center of roblox client
 static DWORD g_lastSwingAt = 0; // last manual or injected click - hitfix window
@@ -1093,16 +1093,7 @@ static void mouse_move(int dx, int dy)
     SendInput(1, &in, sizeof(in));
 }
 
-static void mouse_click()
-{
-    INPUT in[2]{};
-    in[0].type = INPUT_MOUSE; in[0].mi.dwFlags = MOUSEEVENTF_LEFTDOWN;
-    in[1].type = INPUT_MOUSE; in[1].mi.dwFlags = MOUSEEVENTF_LEFTUP;
-    SendInput(2, in, sizeof(in));
-    g_lastSwingAt = GetTickCount();
-}
-
-// subpixel accumulation shared by aimbot + killaura - fractional pixels
+// subpixel accumulation shared by aimbot - fractional pixels
 // carry over between frames instead of being truncated away every frame
 // (the truncation was leaving a permanent aim deadzone)
 static float g_aimAccX = 0.f, g_aimAccY = 0.f;
@@ -1381,7 +1372,7 @@ static bool RayBlocked(const Vec3& eye, const Vec3& tgt)
     return false;
 }
 
-// ---------------- aimbot / triggerbot / hitbox ----------------
+// ---------------- aimbot / hitbox / hitfix / reach ----------------
 
 static bool LocalToolIsBow();
 static void TryReachLunge(const Vec3& target);
@@ -1463,43 +1454,9 @@ static void RunAimbot()
     }
     g_aimbotHadTarget = true;
 
-    // silent bow aim: instant snap while a bow-type tool is equipped
-    bool bowMode = g_cfg.silentBow && LocalToolIsBow();
-    float sx = bowMode ? 1.f : (g_cfg.aimbotSmoothing ? g_cfg.aimbotSmoothX : 1.f);
-    float sy = bowMode ? 1.f : (g_cfg.aimbotSmoothing ? g_cfg.aimbotSmoothY : 1.f);
+    float sx = g_cfg.aimbotSmoothing ? g_cfg.aimbotSmoothX : 1.f;
+    float sy = g_cfg.aimbotSmoothing ? g_cfg.aimbotSmoothY : 1.f;
     AimMove((tx - cx) * sx, (ty - cy) * sy);
-}
-
-static void RunTriggerbot()
-{
-    g_trigActive = false;
-    if (!g_mem.IsAttached()) return;
-    if (!IsBedWars()) return;
-    // silent bow auto-fire works even with the triggerbot itself disabled
-    bool bowAuto = g_cfg.silentBow && LocalToolIsBow();
-    if (!g_cfg.triggerbotEnabled && !bowAuto) return;
-    static bool toggled = false, wasDown = false;
-    if (!bowAuto && !ActKey(g_cfg.triggerKey, g_cfg.triggerMode, toggled, wasDown)) return;
-    g_trigActive = true;
-
-    // time-gate clicks instead of Sleep - sleeping here hitches the whole
-    // overlay render loop on every click
-    static ULONGLONG nextTrig = 0;
-    ULONGLONG now = GetTickCount64();
-    if (now < nextTrig) return;
-
-    for (auto& p : g_players)
-    {
-        if (p.teammate) continue;
-        float dx = p.headX - g_localX, dy = p.headY - g_localY;
-        if (sqrtf(dx * dx + dy * dy) <= g_cfg.triggerFov)
-        {
-            TryReachLunge(p.rootWorld);
-            mouse_click();
-            nextTrig = now + (bowAuto ? 300 : 100); // bows need draw time
-            break;
-        }
-    }
 }
 
 // hitbox: cached primitive addrs + original sizes; we always write
@@ -1611,7 +1568,7 @@ static DWORD g_toolRefresh = 0;
 
 static bool LocalToolIsBow()
 {
-    // detects the equipped tool regardless of silentBow - callers decide
+    // detects the equipped tool - callers decide whether to use it
     // what to do with it (silent aim, reach guard, hitfix guard)
     if (!g_mem.IsAttached()) { g_localTool.clear(); return false; }
     DWORD now = GetTickCount();
@@ -1652,11 +1609,12 @@ static void RunHitfix()
     if (LocalToolIsBow()) return; // don't plant your feet while drawing a bow
 
     DWORD now = GetTickCount();
-    // active while LMB is held OR within 200ms of any click (manual or
-    // injected by killaura/triggerbot) - the game's hitreg window is
-    // ~150ms after the swing so keep the character settled through it
-    bool swinging = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) ||
-                    (now - g_lastSwingAt < 200);
+    // active while LMB is held OR within 200ms of release - the game's
+    // hitreg window is ~150ms after the swing so keep the character
+    // settled through it
+    bool lmb = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+    if (lmb) g_lastSwingAt = now;
+    bool swinging = lmb || (now - g_lastSwingAt < 200);
     if (!swinging) return;
 
     auto& w = sdk::Get();
@@ -1734,6 +1692,27 @@ static void UpdateReachLunge()
     g_lunge = {};
 }
 
+// reach on manual clicks: on each fresh LMB press, lunge toward the
+// nearest enemy - the lunge itself restores ~90ms later
+static void RunReachManual()
+{
+    if (!g_cfg.reachEnabled || !g_mem.IsAttached() || !GameFocused()) return;
+    static bool wasDown = false;
+    bool down = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
+    if (!down) { wasDown = false; return; }
+    if (wasDown) return;
+    wasDown = true;
+
+    const PlayerBox* best = nullptr;
+    float bd = 1e9f;
+    for (auto& p : g_players)
+    {
+        if (p.teammate) continue;
+        if (p.dist < bd) { bd = p.dist; best = &p; }
+    }
+    if (best) TryReachLunge(best->rootWorld);
+}
+
 // ---------------- anti-void ----------------
 // remembers the highest Y you've stood at recently; if you drop far below
 // it (void/fall behind the map) you get teleported back up. the peak
@@ -1771,101 +1750,6 @@ static void RunAntiVoid()
         {
             lastLog = now;
             Log("[nyx] anti-void rescue y=%.1f -> %.1f", pos.y, np.y);
-        }
-    }
-}
-
-// ---------------- killaura ----------------
-// nyx1-style: acquire players in swing range, filter by facing angle,
-// aim at the target and click at CPS while inside attack range.
-// (scripts use firetouchinterest for hits - externals must click)
-
-static void RunKillaura()
-{
-    g_kaActive = false;
-    if (!g_cfg.killauraEnabled || !g_mem.IsAttached()) return;
-    if (!IsBedWars()) return;
-    static bool toggled = false, wasDown = false;
-    if (!ActKey(g_cfg.kaKey, g_cfg.kaMode, toggled, wasDown)) return;
-    g_kaActive = true;
-    if (g_cfg.kaRequireMouse && !(GetAsyncKeyState(VK_LBUTTON) & 0x8000)) return;
-    if (g_localKnocked) return;
-    if (g_players.empty() || !g_localHrpAddr) return;
-
-    Vec3 lpos = CachedLocalPos();
-    if (lpos.x == 0.f && lpos.y == 0.f && lpos.z == 0.f) return;
-
-    // local facing from HRP rotation matrix (look = -Z column)
-    uintptr_t lprim = g_mem.ReadPtr(g_localHrpAddr + OFF("BasePart", "Primitive"));
-    if (!lprim) return;
-    float r[9];
-    for (int i = 0; i < 9; i++) r[i] = g_mem.Read<float>(lprim + OFF("Primitive", "Rotation") + i * 4);
-    float lx = -r[2], lz = -r[8];
-    float llen = sqrtf(lx * lx + lz * lz);
-    if (llen < 0.001f) return;
-    lx /= llen; lz /= llen;
-
-    const PlayerBox* best = nullptr;
-    float bestDist = 1e9f;
-    for (auto& p : g_players)
-    {
-        if (p.teammate && g_cfg.kaTeamCheck) continue;
-        if (p.health <= 0.f) continue;
-
-        float dx = p.rootWorld.x - lpos.x, dy = p.rootWorld.y - lpos.y, dz = p.rootWorld.z - lpos.z;
-        float dist = sqrtf(dx * dx + dy * dy + dz * dz);
-        if (dist > g_cfg.kaSwingRange) continue;
-
-        // flat facing angle vs target direction
-        float flat = sqrtf(dx * dx + dz * dz);
-        if (flat > 0.01f && g_cfg.kaAngle < 360.f)
-        {
-            float dot = (lx * dx + lz * dz) / flat;
-            if (dot > 1.f) dot = 1.f; if (dot < -1.f) dot = -1.f;
-            float angDeg = acosf(dot) * 57.29578f;
-            if (angDeg > g_cfg.kaAngle / 2.f) continue;
-        }
-        if (dist < bestDist) { bestDist = dist; best = &p; }
-    }
-    if (!best) return;
-
-    // aim at the predicted head position - leads moving targets so the
-    // swing connects instead of whiffing on where they were
-    Vec3 aimWorld = best->headWorld;
-    if (g_cfg.kaPredMs > 0.f)
-    {
-        float lead = g_cfg.kaPredMs / 1000.f;
-        aimWorld.x += best->headVel.x * lead;
-        aimWorld.y += best->headVel.y * lead;
-        aimWorld.z += best->headVel.z * lead;
-    }
-    float tx = best->headX, ty = best->headY;
-    Vec2 ts;
-    if (sdk::WorldToScreen(aimWorld, ts) && ts.x != -1.f) { tx = ts.x; ty = ts.y; }
-
-    // subpixel accumulation via shared AimMove - fractional pixels carry
-    // over between frames instead of dying to int truncation
-    AimMove((tx - g_localX) * g_cfg.kaSmooth, (ty - g_localY) * g_cfg.kaSmooth);
-
-    // only swing when the crosshair is actually on the target - clicking
-    // at CPS while the aim is still travelling was the main whiff source
-    float aimErr = sqrtf((tx - g_localX) * (tx - g_localX) +
-                         (ty - g_localY) * (ty - g_localY));
-
-    // click at CPS while inside attack range (+ reachStuds when reach is on
-    // - the lunge steps you into range for that click, then restores)
-    float clickRange = g_cfg.kaAttackRange + (g_cfg.reachEnabled ? g_cfg.reachStuds : 0.f);
-    if (bestDist <= clickRange && aimErr <= g_cfg.kaClickPx)
-    {
-        static ULONGLONG nextClick = 0;
-        ULONGLONG now = GetTickCount64();
-        double interval = 1000.0 / (g_cfg.kaCps > 0.f ? g_cfg.kaCps : 1.f);
-        if (now >= nextClick)
-        {
-            nextClick += (ULONGLONG)interval;
-            if (now > nextClick + (ULONGLONG)interval) nextClick = now; // dropped >1 slot, resync
-            if (bestDist > g_cfg.kaAttackRange) TryReachLunge(best->rootWorld);
-            mouse_click();
         }
     }
 }
@@ -2065,15 +1949,12 @@ static void MenuAim()
     ImGui::Combo("Priority", &g_cfg.aimbotSort, sorts, 4);
     ImGui::Checkbox("BedWars check", &g_cfg.bedwarsOnly);
     if (g_cfg.bedwarsOnly)
-        ImGui::TextDisabled("Gates aim, triggerbot, killaura and silent bow");
+        ImGui::TextDisabled("Gates aim assist");
     ImGui::SliderFloat("Range (studs)", &g_cfg.aimbotRange, 5.f, 150.f, "%.0f");
     ImGui::Combo("Activation", &g_cfg.aimbotMode, kActModes, 3);
     RebindButton("Key", &g_cfg.aimbotKey);
     if (g_cfg.aimbotMode == 1)
         ImGui::TextDisabled("Press %s to toggle aim assist", VkName(g_cfg.aimbotKey));
-    ImGui::Checkbox("Silent aim (bow)", &g_cfg.silentBow);
-    if (g_cfg.silentBow)
-        ImGui::TextDisabled("Instant snap + auto-shoot while bow/crossbow/slingshot equipped");
     ImGui::Separator();
     ImGui::Text("Checks");
     ImGui::Checkbox("Team check", &g_cfg.aimbotTeamCheck);
@@ -2081,14 +1962,6 @@ static void MenuAim()
     ImGui::Checkbox("Wall check", &g_cfg.aimbotWallCheck);
     ImGui::Checkbox("Health check", &g_cfg.aimbotHealthCheck);
     ImGui::Checkbox("Range check", &g_cfg.aimbotRangeCheck);
-}
-
-static void MenuTrigger()
-{
-    ImGui::Checkbox("Enabled", &g_cfg.triggerbotEnabled);
-    ImGui::SliderFloat("FOV", &g_cfg.triggerFov, 5.f, 150.f, "%.0f px");
-    ImGui::Combo("Activation", &g_cfg.triggerMode, kActModes, 3);
-    RebindButton("Key", &g_cfg.triggerKey);
 }
 
 static void MenuHitbox()
@@ -2101,24 +1974,7 @@ static void MenuHitbox()
     ImGui::Separator();
     ImGui::Text("Hit Fix");
     ImGui::Checkbox("Enabled##hitfix", &g_cfg.hitfixEnabled);
-    ImGui::TextDisabled("Zeroes velocity through the swing window (manual + killaura clicks)");
-    ImGui::Separator();
-    ImGui::Text("Killaura");
-    ImGui::Checkbox("Enabled##ka", &g_cfg.killauraEnabled);
-    ImGui::SliderFloat("CPS", &g_cfg.kaCps, 1.f, 40.f, "%.0f");
-    ImGui::SliderFloat("Swing range (studs)", &g_cfg.kaSwingRange, 1.f, 30.f, "%.0f");
-    ImGui::SliderFloat("Attack range (studs)", &g_cfg.kaAttackRange, 1.f, 30.f, "%.0f");
-    ImGui::SliderFloat("Max angle", &g_cfg.kaAngle, 1.f, 360.f, "%.0f");
-    ImGui::SliderFloat("Aim smooth", &g_cfg.kaSmooth, 0.05f, 1.f, "%.2f");
-    ImGui::SliderFloat("Prediction (ms)", &g_cfg.kaPredMs, 0.f, 300.f, "%.0f");
-    ImGui::SliderFloat("Click within px", &g_cfg.kaClickPx, 2.f, 80.f, "%.0f");
-    ImGui::Combo("Activation##ka", &g_cfg.kaMode, kActModes, 3);
-    RebindButton("Key##ka", &g_cfg.kaKey);
-    if (g_cfg.kaMode == 1)
-        ImGui::TextDisabled("Press %s to toggle killaura", VkName(g_cfg.kaKey));
-    ImGui::Checkbox("Require mouse down##ka", &g_cfg.kaRequireMouse);
-    ImGui::Checkbox("Team check##ka", &g_cfg.kaTeamCheck);
-    ImGui::TextDisabled("Auto-aims and clicks at targets in range/angle");
+    ImGui::TextDisabled("Zeroes velocity through the swing window");
     ImGui::Separator();
     ImGui::Text("Reach");
     ImGui::Checkbox("Enabled##reach", &g_cfg.reachEnabled);
@@ -2254,8 +2110,8 @@ static void DrawMenu()
         ImGui::TextDisabled("v%s", NYX_VERSION);
         ImGui::Separator();
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
-        const char* names[] = { "AIM ASSIST", "TRIGGERBOT", "HITBOX", "VISUALS", "MISC" };
-        for (int i = 0; i < 5; i++)
+        const char* names[] = { "AIM ASSIST", "HITBOX", "VISUALS", "MISC" };
+        for (int i = 0; i < 4; i++)
         {
             if (section == i)
                 ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_CheckMark]);
@@ -2269,10 +2125,9 @@ static void DrawMenu()
         switch (section)
         {
         case 0: MenuAim(); break;
-        case 1: MenuTrigger(); break;
-        case 2: MenuHitbox(); break;
-        case 3: MenuVisuals(); break;
-        case 4: MenuMisc(); break;
+        case 1: MenuHitbox(); break;
+        case 2: MenuVisuals(); break;
+        case 3: MenuMisc(); break;
         }
         ImGui::EndChild();
     }
@@ -2282,7 +2137,6 @@ static void DrawMenu()
         if (ImGui::BeginTabBar("tabs"))
         {
             if (ImGui::BeginTabItem("Aim Assist")) { MenuAim(); ImGui::EndTabItem(); }
-            if (ImGui::BeginTabItem("Triggerbot")) { MenuTrigger(); ImGui::EndTabItem(); }
             if (ImGui::BeginTabItem("Hitbox")) { MenuHitbox(); ImGui::EndTabItem(); }
             if (ImGui::BeginTabItem("Visuals")) { MenuVisuals(); ImGui::EndTabItem(); }
             if (ImGui::BeginTabItem("Misc")) { MenuMisc(); ImGui::EndTabItem(); }
@@ -2527,10 +2381,9 @@ void Overlay::Run()
         if (focused)
         {
             RunAimbot();
-            RunTriggerbot();
             RunHitbox();
             RunHitfix();
-            RunKillaura();
+            RunReachManual();
             RunAntiVoid();
         }
 
@@ -2544,12 +2397,10 @@ void Overlay::Run()
         // there's no guessing whether a toggle/key actually engaged
         {
             char stat[160];
-            snprintf(stat, sizeof(stat), "AIM:%s KA:%s TRIG:%s%s",
+            snprintf(stat, sizeof(stat), "AIM:%s%s",
                 g_aimbotActive ? "ON " : "off",
-                g_kaActive ? "ON " : "off",
-                g_trigActive ? "ON " : "off",
                 g_hitboxActive ? " HIT:ON" : "");
-            bool any = g_aimbotActive || g_kaActive || g_trigActive || g_hitboxActive;
+            bool any = g_aimbotActive || g_hitboxActive;
             bg->AddText({ 12.f, 48.f },
                 any ? IM_COL32(140, 230, 140, 220) : IM_COL32(140, 140, 140, 160), stat);
         }
