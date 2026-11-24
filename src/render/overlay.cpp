@@ -193,6 +193,17 @@ static void RefreshPlayer(CachedPlayer& cp, const Instance& p)
         else if (cn == "LowerTorso") cp.lowerTorso = c.addr;
         if (cp.humanoid == 0 && c.GetClassName() == "Humanoid") cp.humanoid = c.addr;
     }
+    // display names sometimes carry the kit ("xX_Kitslayer_Xx" etc.)
+    if (cp.kit.empty())
+    {
+        std::string dn = g_mem.ReadRobloxString(p.addr + OFF("Player", "DisplayName"));
+        tryKit(dn);
+    }
+    if (cp.kit.empty() && cp.humanoid)
+    {
+        std::string hd = g_mem.ReadRobloxString(cp.humanoid + OFF("Humanoid", "DisplayName"));
+        tryKit(hd);
+    }
     cp.name = p.GetName();
 }
 
@@ -238,6 +249,14 @@ static void ScanNpcs()
 
     std::unordered_set<uintptr_t> playerChars;
     for (auto& [a, cp] : g_cache) if (cp.character) playerChars.insert(cp.character);
+    // MUST exclude the local player's own character - it's a workspace
+    // model too, and without this hitbox/ESP target yourself (the
+    // "hitboxes ruin my camera/character" bug)
+    if (w.localPlayer)
+    {
+        uintptr_t lc = g_mem.ReadPtr(w.localPlayer + OFF("Player", "ModelInstance"));
+        if (lc) playerChars.insert(lc);
+    }
 
     Instance ws(w.workspace);
     for (auto& c : ws.GetChildren())
