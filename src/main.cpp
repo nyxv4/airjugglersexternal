@@ -9,7 +9,7 @@
 #include <shellapi.h>
 
 // bump this every release; VERSION file on github holds the latest
-#define NYX_BUILD 14
+#define NYX_BUILD 15
 
 static const char* kRepoBase = "https://raw.githubusercontent.com/nyxv4/airjugglersexternal/main";
 

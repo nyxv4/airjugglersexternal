@@ -707,6 +707,49 @@ static void RunReach()
     g_reach.applied = true;
 }
 
+// ---------------- hit fix ----------------
+// while LMB is held, zero the local HRP's horizontal velocity so your
+// character stays planted during swings - hits register the same every
+// time regardless of ping/fps. closest external equivalent of the
+// executor hitfix (which hooks the sword function inside the game).
+
+static uintptr_t g_hitfixHrp = 0, g_hitfixPrim = 0;
+static DWORD g_hitfixRefresh = 0;
+
+static void RunHitfix()
+{
+    bool want = g_cfg.hitfixEnabled && g_mem.IsAttached() && GameFocused();
+    if (!want) { g_hitfixHrp = 0; g_hitfixRefresh = 0; return; }
+    if (!(GetAsyncKeyState(VK_LBUTTON) & 0x8000)) return; // only while swinging
+
+    DWORD now = GetTickCount();
+    auto& w = sdk::Get();
+    if (!w.localPlayer) return;
+
+    if (now >= g_hitfixRefresh || !g_hitfixHrp)
+    {
+        g_hitfixRefresh = now + 500;
+        uintptr_t charAddr = g_mem.ReadPtr(w.localPlayer + OFF("Player", "ModelInstance"));
+        g_hitfixHrp = 0;
+        if (charAddr)
+        {
+            Instance ch(charAddr);
+            for (auto& c : ch.GetChildren())
+            {
+                std::string cn = c.GetName();
+                if (cn == "HumanoidRootPart") { g_hitfixHrp = c.addr; break; }
+                if (cn == "Torso") g_hitfixHrp = c.addr;
+            }
+        }
+        g_hitfixPrim = g_hitfixHrp ? g_mem.ReadPtr(g_hitfixHrp + OFF("BasePart", "Primitive")) : 0;
+    }
+    if (!g_hitfixPrim) return;
+
+    Vec3 vel = g_mem.Read<Vec3>(g_hitfixPrim + OFF("Primitive", "AssemblyLinearVelocity"));
+    if (vel.x != 0.f || vel.z != 0.f)
+        g_mem.Write<Vec3>(g_hitfixPrim + OFF("Primitive", "AssemblyLinearVelocity"), { 0.f, vel.y, 0.f });
+}
+
 // ---------------- key rebind ----------------
 
 static int* g_rebindTarget = nullptr;
@@ -887,7 +930,7 @@ static void MenuAim()
     ImGui::Checkbox("Enable prediction", &g_cfg.aimbotPrediction);
     if (g_cfg.aimbotPrediction)
         ImGui::SliderFloat("Prediction (ms)", &g_cfg.aimbotPredMs, 0.f, 500.f, "%.0f");
-    ImGui::SliderFloat("Range (studs)", &g_cfg.aimbotRange, 5.f, 30.f, "%.0f");
+    ImGui::SliderFloat("Range (studs)", &g_cfg.aimbotRange, 5.f, 150.f, "%.0f");
     ImGui::Combo("Activation", &g_cfg.aimbotMode, kActModes, 3);
     ImGui::TextDisabled("%s: %s", kActModes[g_cfg.aimbotMode], VkName(g_cfg.aimbotKey));
     ImGui::Separator();
@@ -916,7 +959,11 @@ static void MenuHitbox()
     ImGui::Separator();
     ImGui::Text("Reach");
     ImGui::Checkbox("Enabled##reach", &g_cfg.reachEnabled);
-    ImGui::SliderFloat("Range (studs)", &g_cfg.reachStuds, 0.f, 5.f, "%.1f");
+    ImGui::SliderFloat("Range (studs)", &g_cfg.reachStuds, 0.f, 18.f, "%.1f");
+    ImGui::Separator();
+    ImGui::Text("Hit Fix");
+    ImGui::Checkbox("Enabled##hitfix", &g_cfg.hitfixEnabled);
+    ImGui::TextDisabled("Plants you while swinging for consistent hitreg");
 }
 
 static void MenuVisuals()
@@ -1230,6 +1277,7 @@ void Overlay::Run()
             RunTriggerbot();
             RunHitbox();
             RunReach();
+            RunHitfix();
         }
 
         ImGui_ImplDX11_NewFrame();

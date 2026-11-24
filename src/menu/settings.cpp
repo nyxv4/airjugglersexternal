@@ -38,8 +38,8 @@ void config::Load(const char* path)
     g_cfg.aimbotMode = std::stoi(get("aimbot_mode", "1"));
     g_cfg.aimbotFov = std::stof(get("aimbot_fov", "120"));
     g_cfg.aimbotSmooth = std::stof(get("aimbot_smooth", "0.25"));
-    g_cfg.aimbotRange = std::stof(get("aimbot_range", "30"));
-    if (g_cfg.aimbotRange > 30.f) g_cfg.aimbotRange = 30.f;
+    g_cfg.aimbotRange = std::stof(get("aimbot_range", "60"));
+    if (g_cfg.aimbotRange > 150.f) g_cfg.aimbotRange = 150.f;
     g_cfg.aimbotSmoothing = get("aimbot_smoothing", "1") == "1";
     g_cfg.aimbotSmoothStyle = std::stoi(get("aimbot_style", "1"));
     g_cfg.aimbotShake = get("aimbot_shake", "0") == "1";
@@ -60,7 +60,8 @@ void config::Load(const char* path)
     g_cfg.hitboxMult = std::stof(get("hitbox_mult", "2.5"));
     g_cfg.hitboxMaxStuds = std::stof(get("hitbox_max", "0"));
     g_cfg.reachEnabled = get("reach_enabled", "0") == "1";
-    g_cfg.reachStuds = std::stof(get("reach_studs", "1"));
+    g_cfg.reachStuds = std::stof(get("reach_studs", "6.5"));
+    g_cfg.hitfixEnabled = get("hitfix_enabled", "0") == "1";
     g_cfg.streamproof = get("streamproof", "1") == "1";
     g_cfg.menuKey = std::stoi(get("menu_key", "161"));
     g_cfg.uiTheme = std::stoi(get("ui_theme", "0"));
@@ -108,6 +109,7 @@ void config::Save(const char* path)
     f << "hitbox_max=" << g_cfg.hitboxMaxStuds << "\n";
     f << "reach_enabled=" << g_cfg.reachEnabled << "\n";
     f << "reach_studs=" << g_cfg.reachStuds << "\n";
+    f << "hitfix_enabled=" << g_cfg.hitfixEnabled << "\n";
     f << "streamproof=" << g_cfg.streamproof << "\n";
     f << "menu_key=" << g_cfg.menuKey << "\n";
     f << "ui_theme=" << g_cfg.uiTheme << "\n";

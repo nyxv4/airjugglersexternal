@@ -19,7 +19,7 @@ struct Settings
     int aimbotKey = 0x58;        // X
     float aimbotFov = 120.f;     // px radius
     float aimbotSmooth = 0.25f;  // 0..1
-    float aimbotRange = 30.f;    // studs
+    float aimbotRange = 60.f;    // studs
     bool aimbotSmoothing = true;
     int aimbotSmoothStyle = 1;   // 0 = None, 1 = Linear
     bool aimbotShake = false;
@@ -48,7 +48,11 @@ struct Settings
 
     // reach (tool handle resize)
     bool reachEnabled = false;
-    float reachStuds = 1.f;
+    float reachStuds = 6.5f;
+
+    // hit fix: plants your character while swinging so hits register
+    // consistently regardless of ping/fps
+    bool hitfixEnabled = false;
 
     // misc
     bool streamproof = true;
@@ -63,7 +67,7 @@ struct Settings
 
 extern Settings g_cfg;
 
-inline const char* NYX_VERSION = "14";
+inline const char* NYX_VERSION = "15";
 
 namespace config
 {
