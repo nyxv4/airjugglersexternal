@@ -703,6 +703,45 @@ static bool IsBedWarsId(uint64_t pid)
     return false;
 }
 
+// custom/private servers run on place ids we can't enumerate - detect
+// bedwars by content instead: kit attributes on the local player plus
+// bedwars map objects in workspace. throttled, only runs when the
+// place id didn't match.
+static DWORD g_contentCheckAt = 0;
+static bool g_contentBedwars = false;
+
+static bool ContentLooksBedWars()
+{
+    auto& w = sdk::Get();
+    if (w.localPlayer)
+    {
+        Instance lp(w.localPlayer);
+        for (auto& [k, v] : lp.GetAttributes(false))
+        {
+            std::string lk = k;
+            for (auto& c : lk) c = (char)tolower((unsigned char)c);
+            // bedwars stores kit selection in replicated attributes
+            // (PlayingAsKits etc.) - a very strong signal
+            if (lk.find("kit") != std::string::npos) return true;
+        }
+    }
+    if (w.workspace)
+    {
+        for (auto& c : Instance(w.workspace).GetChildren())
+        {
+            std::string cn = c.GetName();
+            for (auto& ch : cn) ch = (char)tolower((unsigned char)ch);
+            if (cn.find("bed") != std::string::npos ||
+                cn.find("generator") != std::string::npos ||
+                cn.find("itempedestal") != std::string::npos ||
+                cn.find("buyzone") != std::string::npos ||
+                cn.find("teambase") != std::string::npos)
+                return true;
+        }
+    }
+    return false;
+}
+
 static bool IsBedWars()
 {
     if (!g_cfg.bedwarsOnly) return true;
@@ -719,6 +758,22 @@ static bool IsBedWars()
             // DON'T gate, otherwise a broken offset kills all combat
             // features silently (this is what made everything feel dead)
             g_isBedWars = (pid == 0) ? -1 : (IsBedWarsId(pid) ? 1 : 0);
+            // unknown place id (custom server?) - fall back to content
+            // detection before declaring it not-bedwars
+            if (g_isBedWars == 0)
+            {
+                if (now >= g_contentCheckAt)
+                {
+                    g_contentCheckAt = now + 10000;
+                    g_contentBedwars = ContentLooksBedWars();
+                    if (g_contentBedwars)
+                    {
+                        Log("[nyx] placeId=%llu not in list but bedwars content detected",
+                            (unsigned long long)pid);
+                    }
+                }
+                if (g_contentBedwars) g_isBedWars = 1;
+            }
             static bool logged = false;
             if (!logged)
             {
