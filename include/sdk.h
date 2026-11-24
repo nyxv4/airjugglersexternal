@@ -31,6 +31,9 @@ public:
     float GetMaxHealth() const;
     uintptr_t GetTeam() const;
 
+    // replicated attributes (name -> string value); used for kit ESP etc.
+    std::vector<std::pair<std::string, std::string>> GetAttributes() const;
+
     // BasePart helpers
     static Vec3 PartPosition(uintptr_t partAddr);
     static Vec3 PartSize(uintptr_t partAddr);

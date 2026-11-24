@@ -96,6 +96,107 @@ float Instance::GetHealth() const { return g_mem.Read<float>(GetHumanoid().addr 
 float Instance::GetMaxHealth() const { return g_mem.Read<float>(GetHumanoid().addr + OFF("Humanoid", "MaxHealth")); }
 uintptr_t Instance::GetTeam() const { return g_mem.ReadPtr(addr + OFF("Player", "Team")); }
 
+// ---- replicated attributes ----
+// offsets from the 99offsetz dump for version-2c6fd5e09aaf4cfa (theo's
+// dump doesn't include the attribute component map)
+namespace AttrOff {
+    constexpr uintptr_t ComponentMap       = 0x38;
+    constexpr uint16_t  ComponentIdAttrs   = 9;
+    constexpr size_t    EntrySize          = 0x10;
+    constexpr uintptr_t IsMap              = 0x0;
+    constexpr uintptr_t MapLength          = 0x8;
+    constexpr uintptr_t MapAttributes      = 0x18;
+    constexpr uintptr_t ArrAttributes      = 0x8;
+    constexpr uintptr_t ArrLength          = 0x10;
+    constexpr uintptr_t AttrSize           = 0x58;
+    constexpr uintptr_t AttrKey            = 0x0;
+    constexpr uintptr_t AttrValue          = 0x18;
+    constexpr int       MaxAttrs           = 64;
+}
+
+static bool AttrPrintable(const std::string& s)
+{
+    if (s.empty() || s.size() > 200) return false;
+    for (char c : s) if ((unsigned char)c < 32 || (unsigned char)c > 126) return false;
+    return true;
+}
+
+// attribute string values are stored as a Roblox std::string; try both
+// known layouts and keep whichever yields printable text
+static std::string ReadAttrString(uintptr_t addr)
+{
+    std::string s = g_mem.ReadRobloxString(addr);
+    if (AttrPrintable(s)) return s;
+
+    // MSVC std::string: {buf[16]|ptr}@0, size@0x10, capacity@0x18
+    uint64_t size = g_mem.Read<uint64_t>(addr + 0x10);
+    uint64_t cap  = g_mem.Read<uint64_t>(addr + 0x18);
+    if (size > 0 && size <= 200)
+    {
+        uintptr_t ptr = (cap > 15) ? g_mem.ReadPtr(addr) : addr;
+        if (ptr > 0x10000)
+        {
+            std::string out; out.resize(size);
+            SIZE_T got = 0;
+            ReadProcessMemory(g_mem.hProcess, (LPCVOID)ptr, out.data(), size, &got);
+            out.resize(got);
+            auto nul = out.find('\0');
+            if (nul != std::string::npos) out.resize(nul);
+            if (AttrPrintable(out)) return out;
+        }
+    }
+    return "";
+}
+
+std::vector<std::pair<std::string, std::string>> Instance::GetAttributes() const
+{
+    std::vector<std::pair<std::string, std::string>> out;
+    if (!valid()) return out;
+
+    uintptr_t compMap = g_mem.ReadPtr(addr + AttrOff::ComponentMap);
+    if (!compMap) return out;
+    uintptr_t start = g_mem.ReadPtr(compMap);
+    uintptr_t end   = g_mem.ReadPtr(compMap + 8);
+    if (!start || end <= start || end - start > 0x10000) return out;
+
+    uintptr_t attrs = 0;
+    for (uintptr_t e = start; e < end; e += AttrOff::EntrySize)
+    {
+        if (g_mem.Read<uint16_t>(e + 8) == AttrOff::ComponentIdAttrs)
+        {
+            attrs = g_mem.ReadPtr(e);
+            break;
+        }
+    }
+    if (!attrs) return out;
+
+    bool isMap = g_mem.Read<uint8_t>(attrs + AttrOff::IsMap) != 0;
+    uintptr_t entries; int len;
+    if (isMap)
+    {
+        entries = g_mem.ReadPtr(attrs + AttrOff::MapAttributes);
+        len     = (int)g_mem.Read<uint32_t>(attrs + AttrOff::MapLength);
+    }
+    else
+    {
+        entries = g_mem.ReadPtr(attrs + AttrOff::ArrAttributes);
+        len     = (int)g_mem.Read<uint32_t>(attrs + AttrOff::ArrLength);
+    }
+    if (!entries || len <= 0 || len > AttrOff::MaxAttrs) return out;
+
+    for (int i = 0; i < len; i++)
+    {
+        uintptr_t e = entries + (uintptr_t)i * AttrOff::AttrSize;
+        uintptr_t keyPtr = g_mem.ReadPtr(e + AttrOff::AttrKey);
+        if (keyPtr < 0x10000) break;
+        std::string key = g_mem.ReadString(keyPtr, 64);
+        if (key.empty() || key.size() > 64) break;
+        std::string val = ReadAttrString(e + AttrOff::AttrValue);
+        out.emplace_back(key, val);
+    }
+    return out;
+}
+
 static uintptr_t PartPrimitive(uintptr_t part)
 {
     return part ? g_mem.ReadPtr(part + OFF("BasePart", "Primitive")) : 0;

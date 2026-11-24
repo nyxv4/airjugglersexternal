@@ -126,6 +126,19 @@ static const KitEntry kKits[] = {
     { "pearl", "PEARL", IM_COL32(240, 235, 230, 255) },
     { "opal", "OPAL", IM_COL32(200, 180, 240, 255) },
     { "netherite", "NETHERITE", IM_COL32(70, 60, 60, 255) },
+    // newer bedwars kits
+    { "barbarian", "BARBARIAN", IM_COL32(180, 90, 50, 255) },
+    { "eldertree", "ELDERTREE", IM_COL32(90, 160, 70, 255) },
+    { "gingerbread", "GINGERBREAD", IM_COL32(200, 120, 60, 255) },
+    { "yuzi", "YUZI", IM_COL32(240, 180, 60, 255) },
+    { "vulcan", "VULCAN", IM_COL32(220, 80, 40, 255) },
+    { "kitslinger", "KITSLINGER", IM_COL32(200, 60, 140, 255) },
+    { "shadow", "SHADOW", IM_COL32(70, 70, 90, 255) },
+    { "phantom", "PHANTOM", IM_COL32(160, 200, 230, 255) },
+    { "reaper", "REAPER", IM_COL32(60, 50, 70, 255) },
+    { "beast", "BEAST", IM_COL32(140, 110, 70, 255) },
+    { "skeleton", "SKELETON", IM_COL32(220, 220, 210, 255) },
+    { "zombie", "ZOMBIE", IM_COL32(110, 160, 60, 255) },
 };
 
 static const KitEntry* MatchKit(const std::string& lower)
@@ -203,6 +216,35 @@ static void RefreshPlayer(CachedPlayer& cp, const Instance& p)
     {
         std::string hd = g_mem.ReadRobloxString(cp.humanoid + OFF("Humanoid", "DisplayName"));
         tryKit(hd);
+    }
+
+    // replicated attributes - bedwars stores kit in PlayingAsKits etc.
+    // (readable externally since attributes replicate to the client)
+    if (cp.kit.empty())
+    {
+        static std::unordered_set<uintptr_t> attrLogged;
+        bool logThis = !attrLogged.count(p.addr);
+        std::string attrDump;
+        auto scanAttrs = [&](const Instance& inst, const char* tag) {
+            for (auto& [k, v] : inst.GetAttributes())
+            {
+                std::string lk = ToLower(k);
+                if (lk.find("kit") != std::string::npos || lk.find("class") != std::string::npos)
+                    tryKit(v);
+                if (logThis && attrDump.size() < 400)
+                {
+                    attrDump += tag; attrDump += ":"; attrDump += k;
+                    attrDump += "="; attrDump += v; attrDump += " ";
+                }
+            }
+        };
+        scanAttrs(p, "p");
+        if (cp.kit.empty() && ch.valid()) scanAttrs(ch, "c");
+        if (logThis && !attrDump.empty())
+        {
+            attrLogged.insert(p.addr);
+            Log("attrs p='%s' %s", cp.name.c_str(), attrDump.c_str());
+        }
     }
     cp.name = p.GetName();
 }
