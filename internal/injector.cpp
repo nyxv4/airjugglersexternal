@@ -69,7 +69,22 @@ int wmain(int argc, wchar_t** argv)
     if (!th) { printf("createremotethread failed err=%lu\n", GetLastError()); CloseHandle(proc); return 1; }
     WaitForSingleObject(th, 10000);
     DWORD code = 0; GetExitCodeThread(th, &code);
-    printf(code ? "injected ok (module 0x%lx)\n" : "inject failed\n", code);
+    printf(code ? "injected ok (module 0x%lx)\n" : "inject failed (dllmain returned 0 or load blocked)\n", code);
+
+    // verify the dll actually shows up in the process module list -
+    // Byfron can make LoadLibrary succeed then immediately unmap it
+    bool loaded = false;
+    HANDLE msnap = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, pid);
+    if (msnap != INVALID_HANDLE_VALUE)
+    {
+        MODULEENTRY32W me{ sizeof(me) };
+        if (Module32FirstW(msnap, &me))
+            do {
+                if (wcsstr(me.szModule, L"NyxInternal")) { loaded = true; break; }
+            } while (Module32NextW(msnap, &me));
+        CloseHandle(msnap);
+    }
+    printf("module check: %s\n", loaded ? "NyxInternal.dll IS loaded" : "NyxInternal.dll NOT in module list (blocked/unmapped)");
     CloseHandle(th); VirtualFreeEx(proc, remote, 0, MEM_RELEASE); CloseHandle(proc);
-    return code ? 0 : 1;
+    return (code && loaded) ? 0 : 1;
 }
