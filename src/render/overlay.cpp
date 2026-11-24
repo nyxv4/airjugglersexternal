@@ -78,6 +78,9 @@ struct PlayerBox
 static std::vector<PlayerBox> g_players;
 static bool g_localKnocked = false;
 static bool g_aimbotHadTarget = false;
+// live feature state for the on-screen status line - set inside each
+// Run* function right after its activation check passes
+static bool g_aimbotActive = false, g_kaActive = false, g_trigActive = false;
 static Vec2 g_localScreen;
 static float g_localX, g_localY; // screen center of roblox client
 
@@ -799,10 +802,12 @@ static void TryReachLunge(const Vec3& target);
 
 static void RunAimbot()
 {
+    g_aimbotActive = false;
     if (!g_cfg.aimbotEnabled || !g_mem.IsAttached()) return;
     if (!IsBedWars()) return;
     static bool toggled = false, wasDown = false;
     if (!ActKey(g_cfg.aimbotKey, g_cfg.aimbotMode, toggled, wasDown)) return;
+    g_aimbotActive = true;
     if (g_cfg.aimbotKnockCheck && g_localKnocked) return;
     if (g_players.empty()) return;
 
@@ -861,6 +866,7 @@ static void RunAimbot()
 
 static void RunTriggerbot()
 {
+    g_trigActive = false;
     if (!g_mem.IsAttached()) return;
     if (!IsBedWars()) return;
     // silent bow auto-fire works even with the triggerbot itself disabled
@@ -868,6 +874,7 @@ static void RunTriggerbot()
     if (!g_cfg.triggerbotEnabled && !bowAuto) return;
     static bool toggled = false, wasDown = false;
     if (!bowAuto && !ActKey(g_cfg.triggerKey, g_cfg.triggerMode, toggled, wasDown)) return;
+    g_trigActive = true;
 
     // time-gate clicks instead of Sleep - sleeping here hitches the whole
     // overlay render loop on every click
@@ -1158,10 +1165,12 @@ static void RunAntiVoid()
 
 static void RunKillaura()
 {
+    g_kaActive = false;
     if (!g_cfg.killauraEnabled || !g_mem.IsAttached()) return;
     if (!IsBedWars()) return;
     static bool toggled = false, wasDown = false;
     if (!ActKey(g_cfg.kaKey, g_cfg.kaMode, toggled, wasDown)) return;
+    g_kaActive = true;
     if (g_cfg.kaRequireMouse && !(GetAsyncKeyState(VK_LBUTTON) & 0x8000)) return;
     if (g_localKnocked) return;
     if (g_players.empty() || !g_localHrpAddr) return;
@@ -1849,8 +1858,19 @@ void Overlay::Run()
 
         ImDrawList* bg = ImGui::GetBackgroundDrawList();
         if (g_mem.IsAttached() && focused) DrawEsp(bg);
-        // feature status indicators - hitbox/reach are invisible by design
-        // so show a small marker so you can tell they're actually running
+        // feature status line - shows what's actually armed right now so
+        // there's no guessing whether a toggle/key actually engaged
+        {
+            char stat[160];
+            snprintf(stat, sizeof(stat), "AIM:%s KA:%s TRIG:%s%s",
+                g_aimbotActive ? "ON " : "off",
+                g_kaActive ? "ON " : "off",
+                g_trigActive ? "ON " : "off",
+                g_hitboxActive ? " HIT:ON" : "");
+            bool any = g_aimbotActive || g_kaActive || g_trigActive || g_hitboxActive;
+            bg->AddText({ 12.f, 48.f },
+                any ? IM_COL32(140, 230, 140, 220) : IM_COL32(140, 140, 140, 160), stat);
+        }
         if (g_hitboxActive)
             bg->AddText({ 12.f, 12.f }, IM_COL32(120, 220, 255, 220), "HITBOX");
         if (g_cfg.reachEnabled && g_lunge.prim)
