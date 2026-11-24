@@ -725,6 +725,31 @@ static void ApplyTheme()
         c[ImGuiCol_ScrollbarGrab] = { 0.70f, 0.72f, 0.75f, 1.f };
         break;
 
+    case 4: // vape v4: charcoal panels, thin borders, crisp white text
+        c[ImGuiCol_WindowBg] = { 0.07f, 0.07f, 0.08f, 0.98f };
+        c[ImGuiCol_ChildBg] = { 0.09f, 0.09f, 0.10f, 1.f };
+        c[ImGuiCol_Border] = { 0.18f, 0.18f, 0.20f, 1.f };
+        c[ImGuiCol_FrameBg] = { 0.11f, 0.11f, 0.13f, 1.f };
+        c[ImGuiCol_FrameBgHovered] = { 0.15f, 0.15f, 0.18f, 1.f };
+        c[ImGuiCol_FrameBgActive] = { 0.18f, 0.18f, 0.22f, 1.f };
+        c[ImGuiCol_Button] = { 0.12f, 0.12f, 0.14f, 1.f };
+        c[ImGuiCol_ButtonHovered] = { acc.x * 0.5f + 0.1f, acc.y * 0.5f + 0.1f, acc.z * 0.5f + 0.1f, 1.f };
+        c[ImGuiCol_ButtonActive] = acc;
+        c[ImGuiCol_CheckMark] = acc;
+        c[ImGuiCol_SliderGrab] = acc;
+        c[ImGuiCol_SliderGrabActive] = { acc.x, acc.y, acc.z, 1.f };
+        c[ImGuiCol_Tab] = { 0.09f, 0.09f, 0.10f, 1.f };
+        c[ImGuiCol_TabHovered] = { 0.16f, 0.16f, 0.19f, 1.f };
+        c[ImGuiCol_TabSelected] = { 0.13f, 0.13f, 0.15f, 1.f };
+        c[ImGuiCol_Header] = { acc.x * 0.4f, acc.y * 0.4f, acc.z * 0.4f, 1.f };
+        c[ImGuiCol_HeaderHovered] = acc;
+        c[ImGuiCol_Text] = { 0.92f, 0.92f, 0.94f, 1.f };
+        c[ImGuiCol_TextDisabled] = { 0.45f, 0.45f, 0.48f, 1.f };
+        c[ImGuiCol_ScrollbarGrab] = { 0.20f, 0.20f, 0.23f, 1.f };
+        s.WindowBorderSize = 1.f;
+        s.FrameBorderSize = 0.f;
+        break;
+
     default: // 0 midnight: dark blue-grey, cyan accent
         c[ImGuiCol_WindowBg] = { 0.06f, 0.07f, 0.10f, 0.96f };
         c[ImGuiCol_ChildBg] = { 0.08f, 0.09f, 0.13f, 1.f };
@@ -810,8 +835,8 @@ static void MenuMisc()
     if (g_cfg.streamproof) g_overlay.ApplyStreamproof();
     ImGui::Separator();
     ImGui::Text("Interface");
-    const char* themes[] = { "Midnight", "Incognito", "Neon", "Light" };
-    if (ImGui::Combo("Theme", &g_cfg.uiTheme, themes, 4)) config::Save();
+    const char* themes[] = { "Midnight", "Incognito", "Neon", "Light", "Vape" };
+    if (ImGui::Combo("Theme", &g_cfg.uiTheme, themes, 5)) config::Save();
     const char* layouts[] = { "Tabs", "Sidebar" };
     if (ImGui::Combo("Layout", &g_cfg.uiLayout, layouts, 2)) config::Save();
     ImGui::ColorEdit3("Accent", g_cfg.accent, ImGuiColorEditFlags_NoInputs);
@@ -854,6 +879,13 @@ static void DrawMenu()
         // ---- sidebar layout ----
         static int section = 0;
         ImGui::BeginChild("##sidebar", { 110, 0 }, true);
+        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_CheckMark]);
+        ImGui::SetWindowFontScale(1.3f);
+        ImGui::Text("NYX");
+        ImGui::SetWindowFontScale(1.0f);
+        ImGui::PopStyleColor();
+        ImGui::TextDisabled("v%s", NYX_VERSION);
+        ImGui::Separator();
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
         const char* names[] = { "AIM ASSIST", "TRIGGERBOT", "HITBOX", "VISUALS", "MISC" };
         for (int i = 0; i < 5; i++)

@@ -59,6 +59,8 @@ struct Settings
 
 extern Settings g_cfg;
 
+inline const char* NYX_VERSION = "13";
+
 namespace config
 {
     void Load(const char* path = "config\\nyx.cfg");
