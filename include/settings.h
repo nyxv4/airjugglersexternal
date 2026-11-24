@@ -20,6 +20,7 @@ struct Settings
     // projected to screen) - visual only, separate from the expander
     bool espHitbox = false;
     float espHitboxDist = 200.f; // studs
+    int espHitboxColor = 0;      // 0=red 1=accent 2=white
 
     // aimbot (hold key)
     bool aimbotEnabled = true;
@@ -77,14 +78,16 @@ struct Settings
     int menuKey = 0xA1;         // VK_RSHIFT
 
     // ui
-    int uiTheme = 0;            // 0=midnight 1=incognito 2=neon 3=light
-    int uiLayout = 0;           // 0=tabs 1=sidebar
-    float accent[3] = { 0.35f, 0.75f, 1.0f };
+    int uiTheme = 5;            // 0=midnight 1=incognito 2=neon 3=light 4=vape 5=nyx
+    int uiLayout = 1;           // sidebar is the only layout now
+    float accent[3] = { 0.55f, 0.30f, 0.95f }; // nyx purple
+    float uiScale = 1.f;        // imgui font/global scale
+    int fpsCap = 0;             // 0=uncapped, else fps limit
 };
 
 extern Settings g_cfg;
 
-inline const char* NYX_VERSION = "39";
+inline const char* NYX_VERSION = "40";
 
 namespace config
 {

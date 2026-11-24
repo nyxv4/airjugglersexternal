@@ -361,6 +361,7 @@ static void RefreshPlayer(CachedPlayer& cp, const Instance& p)
 }
 
 static Vec3 CachedLocalPos();
+static ImU32 HitboxEspColor();
 
 // ---------------- npc/dummy scan (bedwars bots etc.) ----------------
 // dummies are Models in Workspace, not Player instances - scan for
@@ -1044,7 +1045,7 @@ static void DrawHitboxEsp(ImDrawList* dl)
         if (p.dist > g_cfg.espHitboxDist) continue;
         if (!g_cfg.espShowTeammates && p.teammate) continue;
         if (p.maxHealth > 0.f && p.health <= 0.f) continue; // dead
-        ImU32 c = p.teammate ? IM_COL32(80, 200, 120, 255) : IM_COL32(255, 90, 90, 255);
+        ImU32 c = p.teammate ? IM_COL32(80, 200, 120, 255) : HitboxEspColor();
 
         for (uintptr_t prim : p.hitPrims)
         {
@@ -1609,13 +1610,18 @@ static void RunHitfix()
     if (LocalToolIsBow()) return; // don't plant your feet while drawing a bow
 
     DWORD now = GetTickCount();
-    // active while LMB is held OR within 200ms of release - the game's
-    // hitreg window is ~150ms after the swing so keep the character
-    // settled through it
-    bool lmb = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0;
-    if (lmb) g_lastSwingAt = now;
-    bool swinging = lmb || (now - g_lastSwingAt < 200);
-    if (!swinging) return;
+    // edge-triggered swing window: only plant for ~180ms after each
+    // fresh click instead of the whole time LMB is held - zeroing
+    // velocity continuously is what was killing sprint speed
+    static DWORD swingUntil = 0;
+    if (GetAsyncKeyState(VK_LBUTTON) & 0x8000)
+    {
+        g_lastSwingAt = now;
+        swingUntil = now + 180;
+    }
+    else if (now - g_lastSwingAt < 200)
+        swingUntil = now + 60; // short tail after release
+    if (now > swingUntil) return;
 
     auto& w = sdk::Get();
     if (!w.localPlayer) return;
@@ -1895,6 +1901,38 @@ static void ApplyTheme()
         s.FrameBorderSize = 0.f;
         break;
 
+    case 5: // nyx bedwars: charcoal panels, neon purple glow
+        c[ImGuiCol_WindowBg] = { 0.05f, 0.05f, 0.07f, 0.98f };
+        c[ImGuiCol_ChildBg] = { 0.08f, 0.08f, 0.11f, 1.f };
+        c[ImGuiCol_PopupBg] = { 0.07f, 0.07f, 0.10f, 0.98f };
+        c[ImGuiCol_Border] = { acc.x * 0.45f, acc.y * 0.45f, acc.z * 0.45f, 0.9f };
+        c[ImGuiCol_FrameBg] = { 0.11f, 0.11f, 0.15f, 1.f };
+        c[ImGuiCol_FrameBgHovered] = { acc.x * 0.30f, acc.y * 0.30f, acc.z * 0.30f, 1.f };
+        c[ImGuiCol_FrameBgActive] = { acc.x * 0.42f, acc.y * 0.42f, acc.z * 0.42f, 1.f };
+        c[ImGuiCol_Button] = { 0.12f, 0.12f, 0.17f, 1.f };
+        c[ImGuiCol_ButtonHovered] = { acc.x * 0.55f, acc.y * 0.55f, acc.z * 0.55f, 1.f };
+        c[ImGuiCol_ButtonActive] = acc;
+        c[ImGuiCol_CheckMark] = acc;
+        c[ImGuiCol_SliderGrab] = acc;
+        c[ImGuiCol_SliderGrabActive] = { acc.x, acc.y, acc.z, 1.f };
+        c[ImGuiCol_Separator] = { acc.x * 0.4f, acc.y * 0.4f, acc.z * 0.4f, 0.8f };
+        c[ImGuiCol_Text] = { 0.93f, 0.92f, 0.97f, 1.f };
+        c[ImGuiCol_TextDisabled] = { 0.50f, 0.48f, 0.56f, 1.f };
+        c[ImGuiCol_Header] = { acc.x * 0.35f, acc.y * 0.35f, acc.z * 0.35f, 1.f };
+        c[ImGuiCol_HeaderHovered] = acc;
+        c[ImGuiCol_ScrollbarBg] = { 0.06f, 0.06f, 0.09f, 1.f };
+        c[ImGuiCol_ScrollbarGrab] = { acc.x * 0.4f, acc.y * 0.4f, acc.z * 0.4f, 1.f };
+        s.WindowRounding = 10.f;
+        s.ChildRounding = 8.f;
+        s.FrameRounding = 6.f;
+        s.PopupRounding = 8.f;
+        s.WindowBorderSize = 1.5f;
+        s.ChildBorderSize = 1.f;
+        s.FrameBorderSize = 0.f;
+        s.WindowPadding = { 0, 0 };
+        s.ItemSpacing = { 8, 7 };
+        break;
+
     default: // 0 midnight: dark blue-grey, cyan accent
         c[ImGuiCol_WindowBg] = { 0.06f, 0.07f, 0.10f, 0.96f };
         c[ImGuiCol_ChildBg] = { 0.08f, 0.09f, 0.13f, 1.f };
@@ -1916,6 +1954,55 @@ static void ApplyTheme()
         c[ImGuiCol_ScrollbarGrab] = { 0.20f, 0.25f, 0.35f, 1.f };
         break;
     }
+}
+
+// ---------------- nyx ui kit ----------------
+// cards auto-size to their contents; tabs lay cards out in two columns
+
+static ImVec4 AccColor() { return { g_cfg.accent[0], g_cfg.accent[1], g_cfg.accent[2], 1.f }; }
+
+static void CardBegin(const char* id, const char* title)
+{
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.085f, 0.085f, 0.115f, 1.f));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(12, 10));
+    ImGui::BeginChild(id, ImVec2(0, 0),
+        ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_Borders |
+        ImGuiChildFlags_AlwaysUseWindowPadding);
+    ImGui::PushStyleColor(ImGuiCol_Text, AccColor());
+    ImGui::TextUnformatted(title);
+    ImGui::PopStyleColor();
+    ImGui::Spacing();
+}
+
+static void CardEnd()
+{
+    ImGui::EndChild();
+    ImGui::PopStyleVar();
+    ImGui::PopStyleColor();
+    ImGui::Spacing();
+}
+
+// two-column card area: left gets ~half, right gets the rest; both
+// scroll independently if cards overflow
+static void ColsBegin()
+{
+    float avail = ImGui::GetContentRegionAvail().x;
+    ImGui::BeginChild("##colL", ImVec2(avail * 0.5f - 5.f, 0), false);
+}
+static void ColsMid()
+{
+    ImGui::EndChild();
+    ImGui::SameLine();
+    ImGui::BeginChild("##colR", ImVec2(0, 0), false);
+}
+static void ColsEnd() { ImGui::EndChild(); }
+
+// hitbox esp enemy color picker value -> imgui color
+static ImU32 HitboxEspColor()
+{
+    if (g_cfg.espHitboxColor == 1) return IM_COL32((int)(g_cfg.accent[0]*255),(int)(g_cfg.accent[1]*255),(int)(g_cfg.accent[2]*255),255);
+    if (g_cfg.espHitboxColor == 2) return IM_COL32(255, 255, 255, 255);
+    return IM_COL32(255, 80, 80, 255);
 }
 
 static void MenuAim()
@@ -1964,68 +2051,83 @@ static void MenuAim()
     ImGui::Checkbox("Range check", &g_cfg.aimbotRangeCheck);
 }
 
-static void MenuHitbox()
+static void CardHitboxExpander()
 {
-    ImGui::Checkbox("Enabled", &g_cfg.hitboxEnabled);
-    ImGui::SliderFloat("Multiplier", &g_cfg.hitboxMult, 1.f, 6.f, "%.1fx");
-    ImGui::SliderFloat("Max studs (0=off)", &g_cfg.hitboxMaxStuds, 0.f, 30.f, "%.1f");
+    ImGui::Checkbox("Enable Hitboxes", &g_cfg.hitboxEnabled);
+    ImGui::SliderFloat("Hitbox size", &g_cfg.hitboxMult, 1.f, 6.f, "%.1fx");
+    ImGui::SliderFloat("Max studs", &g_cfg.hitboxMaxStuds, 0.f, 30.f, "%.1f");
     ImGui::Combo("Activation", &g_cfg.hitboxMode, kActModes, 3);
     RebindButton("Key", &g_cfg.hitboxKey);
-    ImGui::Separator();
-    ImGui::Text("Hit Fix");
-    ImGui::Checkbox("Enabled##hitfix", &g_cfg.hitfixEnabled);
-    ImGui::TextDisabled("Zeroes velocity through the swing window");
-    ImGui::Separator();
-    ImGui::Text("Reach");
-    ImGui::Checkbox("Enabled##reach", &g_cfg.reachEnabled);
-    ImGui::SliderFloat("Studs##reach", &g_cfg.reachStuds, 0.f, 12.f, "%.1f");
-    ImGui::TextDisabled("Extends melee reach on click - auto-restores, hitreg safe");
+    ImGui::TextDisabled("Invisible - expands enemy hitboxes, doesn't change visuals");
 }
 
-static void MenuVisuals()
+static void CardHitboxEsp()
+{
+    ImGui::Checkbox("Hitbox ESP", &g_cfg.espHitbox);
+    if (g_cfg.espHitbox)
+    {
+        ImGui::SliderFloat("Distance", &g_cfg.espHitboxDist, 25.f, 500.f, "%.0f studs");
+        const char* hcols[] = { "Red", "Accent", "White" };
+        ImGui::Combo("Colour", &g_cfg.espHitboxColor, hcols, 3);
+    }
+    ImGui::TextDisabled("Draws real body-part bounds - visual only");
+}
+
+static void CardHitFix()
+{
+    ImGui::Checkbox("Enabled##hitfix", &g_cfg.hitfixEnabled);
+    ImGui::TextDisabled("Zeroes velocity through the swing window - sprint safe");
+}
+
+static void CardReach()
+{
+    ImGui::Checkbox("Enabled##reach", &g_cfg.reachEnabled);
+    ImGui::SliderFloat("Studs##reach", &g_cfg.reachStuds, 0.f, 12.f, "%.1f");
+    ImGui::TextDisabled("Lunges toward nearest enemy on click - auto-restores");
+}
+
+static void CardPlayerEsp()
 {
     ImGui::Checkbox("Box ESP", &g_cfg.espBox);
     ImGui::Checkbox("Name ESP", &g_cfg.espName);
     ImGui::Checkbox("Distance ESP", &g_cfg.espDistance);
-    ImGui::Checkbox("Health bar", &g_cfg.espHealth);
-    ImGui::Checkbox("Snaplines", &g_cfg.espSnaplines);
-    ImGui::Checkbox("Team check", &g_cfg.espTeamCheck);
-    ImGui::Checkbox("Show teammates", &g_cfg.espShowTeammates);
+    ImGui::Checkbox("Health ESP", &g_cfg.espHealth);
+    ImGui::Checkbox("Snap Lines", &g_cfg.espSnaplines);
+    ImGui::Checkbox("Team Check", &g_cfg.espTeamCheck);
+    ImGui::Checkbox("Show Teammates", &g_cfg.espShowTeammates);
     ImGui::Checkbox("Kit ESP", &g_cfg.espKit);
-    ImGui::Checkbox("Hitbox ESP", &g_cfg.espHitbox);
-    if (g_cfg.espHitbox)
-        ImGui::SliderFloat("Hitbox dist", &g_cfg.espHitboxDist, 25.f, 500.f, "%.0f studs");
-    ImGui::TextDisabled("Draws real body-part bounds - visual only, doesn't change hitreg");
+}
+
+static void CardWorldEsp()
+{
     ImGui::Checkbox("Object ESP", &g_cfg.objEsp);
     if (g_cfg.objEsp)
         ImGui::SliderFloat("Object dist", &g_cfg.objEspDist, 25.f, 1000.f, "%.0f studs");
-    ImGui::TextDisabled("Marks hidden metal, orbs, bees, traps and other kit objects");
+    ImGui::TextDisabled("Marks hidden metal, orbs, bees, traps, drops and kit objects");
 }
 
-static void MenuMisc()
+static void CardWorld()
 {
     ImGui::Checkbox("Streamproof", &g_cfg.streamproof);
     if (g_cfg.streamproof) g_overlay.ApplyStreamproof();
     ImGui::Separator();
-    ImGui::Text("World");
     ImGui::Checkbox("Anti-void", &g_cfg.antiVoid);
     if (g_cfg.antiVoid)
         ImGui::SliderFloat("Fall distance", &g_cfg.antiVoidDist, 10.f, 120.f, "%.0f studs");
     ImGui::TextDisabled("Teleports you back up if you fall too far");
     ImGui::Separator();
-    ImGui::Text("Interface");
-    const char* themes[] = { "Midnight", "Incognito", "Neon", "Light", "Vape" };
-    if (ImGui::Combo("Theme", &g_cfg.uiTheme, themes, 5)) config::Save();
-    const char* layouts[] = { "Tabs", "Sidebar" };
-    if (ImGui::Combo("Layout", &g_cfg.uiLayout, layouts, 2)) config::Save();
-    ImGui::ColorEdit3("Accent", g_cfg.accent, ImGuiColorEditFlags_NoInputs);
-    ImGui::Text("Keybinds");
-    RebindButton("Menu", &g_cfg.menuKey);
-    ImGui::TextDisabled("Feature keys are rebound inside each tab");
-    ImGui::TextDisabled("INSERT still toggles this menu");
+    ImGui::TextDisabled("Coming soon");
+    ImGui::BeginDisabled();
+    ImGui::Checkbox("Anti-fall", nullptr);
+    ImGui::Checkbox("No-slow", nullptr);
+    ImGui::Checkbox("Fast break", nullptr);
+    ImGui::Checkbox("Auto bridge", nullptr);
+    ImGui::EndDisabled();
+}
+
+static void CardStatus()
+{
     ImGui::Text("Roblox PID: %lu", g_mem.pid);
-    ImGui::Text("Base: 0x%llx", (unsigned long long)g_mem.base);
-    ImGui::Text("Version: v%s", NYX_VERSION);
     ImGui::Text("PlaceId: %llu", (unsigned long long)g_lastPlaceId);
     ImGui::Text("BedWars: %s", g_isBedWars == 1 ? "yes" : (g_isBedWars == 0 ? "NO (combat off)" : "unknown"));
     ImGui::Text("Offsets: %s", offsets::Ready() ? offsets::ClientVersion().c_str() : "fetching...");
@@ -2053,8 +2155,75 @@ static void MenuMisc()
         }
         ImGui::Text("Kit attr: %s", attrDiag.c_str());
     }
-    ImGui::Separator();
-    ImGui::Text("Configs");
+}
+
+static void CardDanger()
+{
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.1f, 0.1f, 1.f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.8f, 0.15f, 0.15f, 1.f));
+    if (ImGui::Button("DESTROY / UNLOAD", { -1, 30 }))
+        g_running = false;
+    ImGui::PopStyleColor(2);
+}
+
+// ---------------- tabs ----------------
+
+static void MenuCombat()
+{
+    ColsBegin();
+    CardBegin("##c_aim", "Aim Assist"); MenuAim(); CardEnd();
+    CardBegin("##c_hitbox", "Hitboxes"); CardHitboxExpander(); CardEnd();
+    ColsMid();
+    CardBegin("##c_hbesp", "Hitbox ESP"); CardHitboxEsp(); CardEnd();
+    CardBegin("##c_hitfix", "Hit Fix"); CardHitFix(); CardEnd();
+    CardBegin("##c_reach", "Reach"); CardReach(); CardEnd();
+    ColsEnd();
+}
+
+static void MenuVisualsTab()
+{
+    ColsBegin();
+    CardBegin("##v_esp", "Player ESP"); CardPlayerEsp(); CardEnd();
+    ColsMid();
+    CardBegin("##v_world", "World ESP"); CardWorldEsp(); CardEnd();
+    ColsEnd();
+}
+
+static void MenuMiscTab()
+{
+    ColsBegin();
+    CardBegin("##m_world", "World"); CardWorld(); CardEnd();
+    CardBegin("##m_status", "Status"); CardStatus(); CardEnd();
+    ColsMid();
+    CardBegin("##m_keys", "Keybinds"); RebindButton("Menu", &g_cfg.menuKey); ImGui::TextDisabled("INSERT still toggles this menu"); CardEnd();
+    CardBegin("##m_danger", "Danger Zone"); CardDanger(); CardEnd();
+    ColsEnd();
+}
+
+static void MenuSettings()
+{
+    ColsBegin();
+    CardBegin("##s_ui", "Interface");
+    ImGui::SliderFloat("GUI scale", &g_cfg.uiScale, 0.6f, 1.6f, "%.2fx");
+    const char* themes[] = { "Midnight", "Incognito", "Neon", "Light", "Vape", "NYX" };
+    if (ImGui::Combo("Theme", &g_cfg.uiTheme, themes, 6)) config::Save();
+    ImGui::ColorEdit3("Accent", g_cfg.accent, ImGuiColorEditFlags_NoInputs);
+    const char* fpsopts[] = { "Uncapped", "60", "120", "144", "165", "240" };
+    static const int fpsvals[] = { 0, 60, 120, 144, 165, 240 };
+    int fpsIdx = 0;
+    for (int i = 0; i < 6; i++) if (fpsvals[i] == g_cfg.fpsCap) { fpsIdx = i; break; }
+    if (ImGui::Combo("FPS cap", &fpsIdx, fpsopts, 6)) { g_cfg.fpsCap = fpsvals[fpsIdx]; config::Save(); }
+    CardEnd();
+    CardBegin("##s_reset", "Reset");
+    ImGui::TextDisabled("Restore every setting to defaults");
+    if (ImGui::Button("Reset settings", { -1, 30 }))
+    {
+        g_cfg = Settings{};
+        config::Save();
+    }
+    CardEnd();
+    ColsMid();
+    CardBegin("##s_cfg", "Configs");
     static char cfgName[64] = "default";
     ImGui::InputText("Name", cfgName, sizeof(cfgName));
     if (ImGui::Button("Save", { 80, 0 }))
@@ -2068,12 +2237,27 @@ static void MenuMisc()
         char p[MAX_PATH]; snprintf(p, sizeof(p), "config\\%s.cfg", cfgName);
         config::Load(p); config::Save();
     }
+    CardEnd();
+    ColsEnd();
+}
+
+static void MenuAbout()
+{
+    ImGui::PushStyleColor(ImGuiCol_Text, AccColor());
+    ImGui::SetWindowFontScale(1.6f);
+    ImGui::TextUnformatted("NYX");
+    ImGui::SetWindowFontScale(1.0f);
+    ImGui::PopStyleColor();
+    ImGui::TextDisabled("BEDWARS EDITION");
+    ImGui::Spacing();
     ImGui::Separator();
-    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.1f, 0.1f, 1.f));
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.8f, 0.15f, 0.15f, 1.f));
-    if (ImGui::Button("DESTROY / UNLOAD", { -1, 30 }))
-        g_running = false;
-    ImGui::PopStyleColor(2);
+    ImGui::Spacing();
+    ImGui::Text("Version: v%s", NYX_VERSION);
+    ImGui::Text("Developer: nyx");
+    ImGui::Text("Built with Dear ImGui + DX11");
+    ImGui::Spacing();
+    ImGui::TextDisabled("External overlay - reads memory, draws on top.");
+    ImGui::TextDisabled("Not affiliated with Roblox Corporation.");
 }
 
 static void DrawMenu()
@@ -2094,56 +2278,92 @@ static void DrawMenu()
         if (now - lastThemeSave > 800) { lastThemeSave = now; config::Save(); }
     }
 
-    ImGui::SetNextWindowSize({ 560, 480 }, ImGuiCond_FirstUseEver);
-    if (!ImGui::Begin("NYX", nullptr, ImGuiWindowFlags_NoCollapse)) { ImGui::End(); return; }
+    // gui scale applies to the whole imgui context
+    ImGui::GetIO().FontGlobalScale = g_cfg.uiScale;
 
-    if (g_cfg.uiLayout == 1)
+    ImGui::SetNextWindowSize({ 780, 560 }, ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSizeConstraints({ 680, 460 }, { 1600, 1100 });
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+    if (!ImGui::Begin("##nyx", nullptr,
+        ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar |
+        ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse))
     {
-        // ---- sidebar layout ----
-        static int section = 0;
-        ImGui::BeginChild("##sidebar", { 110, 0 }, true);
-        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_CheckMark]);
-        ImGui::SetWindowFontScale(1.3f);
-        ImGui::Text("NYX");
-        ImGui::SetWindowFontScale(1.0f);
-        ImGui::PopStyleColor();
-        ImGui::TextDisabled("v%s", NYX_VERSION);
-        ImGui::Separator();
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
-        const char* names[] = { "AIM ASSIST", "HITBOX", "VISUALS", "MISC" };
-        for (int i = 0; i < 4; i++)
+        ImGui::End(); ImGui::PopStyleVar(); return;
+    }
+
+    // ---- custom title bar: drag handle + minimize/close ----
+    static bool minimized = false;
+    {
+        ImVec2 wp = ImGui::GetWindowPos();
+        float ww = ImGui::GetWindowWidth();
+        ImGui::SetCursorScreenPos(wp);
+        ImGui::InvisibleButton("##titledrag", { ww - 70.f, 46.f });
+        if (ImGui::IsItemActive() && ImGui::IsMouseDragging(ImGuiMouseButton_Left))
         {
-            if (section == i)
-                ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_CheckMark]);
-            if (ImGui::Button(names[i], { -1, 34 })) section = i;
-            if (section == i) ImGui::PopStyleColor();
+            ImVec2 d = ImGui::GetIO().MouseDelta;
+            ImGui::SetWindowPos({ wp.x + d.x, wp.y + d.y });
         }
-        ImGui::PopStyleColor();
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        ImVec2 ts = ImGui::CalcTextSize("NYX");
+        dl->AddText({ wp.x + 16, wp.y + 8 },
+            IM_COL32((int)(g_cfg.accent[0] * 255), (int)(g_cfg.accent[1] * 255), (int)(g_cfg.accent[2] * 255), 255), "NYX");
+        ImVec2 bs = ImGui::CalcTextSize("BEDWARS");
+        dl->AddText({ wp.x + 16 + ts.x + 8, wp.y + 14 },
+            IM_COL32(140, 140, 155, 255), "BEDWARS");
+        (void)bs;
+
+        ImGui::SetCursorScreenPos({ wp.x + ww - 64, wp.y + 10 });
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1, 1, 1, 0.12f));
+        if (ImGui::Button(minimized ? ">" : "_", { 26, 24 })) minimized = !minimized;
+        ImGui::SameLine();
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.8f, 0.15f, 0.15f, 0.8f));
+        if (ImGui::Button("X", { 26, 24 })) g_cfg.menuVisible = false;
+        ImGui::PopStyleColor(3);
+        ImGui::SetCursorScreenPos({ wp.x, wp.y + 46 });
+        dl->AddLine({ wp.x, wp.y + 46 }, { wp.x + ww, wp.y + 46 },
+            IM_COL32((int)(g_cfg.accent[0] * 120), (int)(g_cfg.accent[1] * 120), (int)(g_cfg.accent[2] * 120), 255));
+    }
+
+    if (!minimized)
+    {
+        // ---- sidebar ----
+        ImGui::BeginChild("##side", { 150, 0 }, false);
+        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 8);
+        static int tab = 0;
+        const char* tabs[] = { "Combat", "Visuals", "Misc", "Settings", "About" };
+        for (int i = 0; i < 5; i++)
+        {
+            if (tab == i)
+            {
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(
+                    g_cfg.accent[0] * 0.30f, g_cfg.accent[1] * 0.30f, g_cfg.accent[2] * 0.30f, 1.f));
+                ImGui::PushStyleColor(ImGuiCol_Text, AccColor());
+            }
+            if (ImGui::Button(tabs[i], { -1, 36 })) tab = i;
+            if (tab == i) { ImGui::PopStyleColor(2); }
+            ImGui::Spacing();
+        }
+        // version at sidebar bottom
+        float sy = ImGui::GetWindowHeight() - 34;
+        ImGui::SetCursorPosY(sy);
+        ImGui::TextDisabled("v%s", NYX_VERSION);
         ImGui::EndChild();
+
         ImGui::SameLine();
         ImGui::BeginChild("##content", { 0, 0 }, true);
-        switch (section)
+        switch (tab)
         {
-        case 0: MenuAim(); break;
-        case 1: MenuHitbox(); break;
-        case 2: MenuVisuals(); break;
-        case 3: MenuMisc(); break;
+        case 0: MenuCombat(); break;
+        case 1: MenuVisualsTab(); break;
+        case 2: MenuMiscTab(); break;
+        case 3: MenuSettings(); break;
+        case 4: MenuAbout(); break;
         }
         ImGui::EndChild();
     }
-    else
-    {
-        // ---- classic tab layout ----
-        if (ImGui::BeginTabBar("tabs"))
-        {
-            if (ImGui::BeginTabItem("Aim Assist")) { MenuAim(); ImGui::EndTabItem(); }
-            if (ImGui::BeginTabItem("Hitbox")) { MenuHitbox(); ImGui::EndTabItem(); }
-            if (ImGui::BeginTabItem("Visuals")) { MenuVisuals(); ImGui::EndTabItem(); }
-            if (ImGui::BeginTabItem("Misc")) { MenuMisc(); ImGui::EndTabItem(); }
-            ImGui::EndTabBar();
-        }
-    }
     ImGui::End();
+    ImGui::PopStyleVar();
 }
 
 // ---------------- wndproc / dx11 ----------------
@@ -2380,10 +2600,15 @@ void Overlay::Run()
         UpdateReachLunge();
         if (focused)
         {
-            RunAimbot();
             RunHitbox();
-            RunHitfix();
-            RunReachManual();
+            // input-injecting features pause while the menu has focus -
+            // otherwise aim assist fights your cursor inside the GUI
+            if (!g_cfg.menuVisible)
+            {
+                RunAimbot();
+                RunHitfix();
+                RunReachManual();
+            }
             RunAntiVoid();
         }
 
@@ -2423,12 +2648,14 @@ void Overlay::Run()
         ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
         swapChain->Present(0, 0);
 
-        // cap overlay at ~120fps so the render thread doesn't pin a core
+        // frame cap: user setting (0 = uncapped, min ~1000fps floor of 1ms)
         {
             static auto lastFrame = std::chrono::steady_clock::now();
             auto nowT = std::chrono::steady_clock::now();
+            int budgetMs = g_cfg.fpsCap > 0 ? 1000 / g_cfg.fpsCap : 8;
+            if (budgetMs < 1) budgetMs = 1;
             auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(nowT - lastFrame).count();
-            if (elapsed < 8) Sleep((DWORD)(8 - elapsed));
+            if (elapsed < budgetMs) Sleep((DWORD)(budgetMs - elapsed));
             lastFrame = std::chrono::steady_clock::now();
         }
 

@@ -43,6 +43,7 @@ void config::Load(const char* path)
     g_cfg.objEspDist = toFloat(get("obj_esp_dist", "250"), 250.f);
     g_cfg.espHitbox = get("esp_hitbox", "0") == "1";
     g_cfg.espHitboxDist = toFloat(get("esp_hitbox_dist", "200"), 200.f);
+    g_cfg.espHitboxColor = clampi(toInt(get("esp_hitbox_color", "0"), 0), 0, 2);
     g_cfg.aimbotEnabled = get("aimbot_enabled", "1") == "1";
     g_cfg.aimbotKey = toInt(get("aimbot_key", "88"), 88);
     g_cfg.aimbotMode = clampi(toInt(get("aimbot_mode", "1"), 1), 0, 2);
@@ -70,7 +71,7 @@ void config::Load(const char* path)
     g_cfg.hitboxMult = toFloat(get("hitbox_mult", "2.5"), 2.5f);
     g_cfg.hitboxMaxStuds = toFloat(get("hitbox_max", "14.4"), 14.4f);
     g_cfg.hitfixEnabled = get("hitfix_enabled", "0") == "1";
-    g_cfg.aimbotSort = clampi(toInt(get("aimbot_sort", "0"), 0), 0, 2);
+    g_cfg.aimbotSort = clampi(toInt(get("aimbot_sort", "0"), 0), 0, 3);
     g_cfg.bedwarsOnly = get("bedwars_only", "1") == "1";
     g_cfg.antiVoid = get("anti_void", "0") == "1";
     g_cfg.antiVoidDist = toFloat(get("anti_void_dist", "40"), 40.f);
@@ -78,11 +79,15 @@ void config::Load(const char* path)
     g_cfg.reachStuds = toFloat(get("reach_studs", "4"), 4.f);
     g_cfg.streamproof = get("streamproof", "1") == "1";
     g_cfg.menuKey = toInt(get("menu_key", "161"), 161);
-    g_cfg.uiTheme = clampi(toInt(get("ui_theme", "0"), 0), 0, 4);
-    g_cfg.uiLayout = clampi(toInt(get("ui_layout", "0"), 0), 0, 1);
-    g_cfg.accent[0] = toFloat(get("accent_r", "0.35"), 0.35f);
-    g_cfg.accent[1] = toFloat(get("accent_g", "0.75"), 0.75f);
-    g_cfg.accent[2] = toFloat(get("accent_b", "1.0"), 1.0f);
+    g_cfg.uiTheme = clampi(toInt(get("ui_theme", "5"), 5), 0, 5);
+    g_cfg.uiLayout = clampi(toInt(get("ui_layout", "1"), 1), 0, 1);
+    g_cfg.uiScale = toFloat(get("ui_scale", "1"), 1.f);
+    if (g_cfg.uiScale < 0.6f) g_cfg.uiScale = 0.6f;
+    if (g_cfg.uiScale > 1.6f) g_cfg.uiScale = 1.6f;
+    g_cfg.fpsCap = clampi(toInt(get("fps_cap", "0"), 0), 0, 500);
+    g_cfg.accent[0] = toFloat(get("accent_r", "0.55"), 0.55f);
+    g_cfg.accent[1] = toFloat(get("accent_g", "0.30"), 0.30f);
+    g_cfg.accent[2] = toFloat(get("accent_b", "0.95"), 0.95f);
 }
 
 void config::Save(const char* path)
@@ -100,6 +105,7 @@ void config::Save(const char* path)
     f << "obj_esp_dist=" << g_cfg.objEspDist << "\n";
     f << "esp_hitbox=" << g_cfg.espHitbox << "\n";
     f << "esp_hitbox_dist=" << g_cfg.espHitboxDist << "\n";
+    f << "esp_hitbox_color=" << g_cfg.espHitboxColor << "\n";
     f << "aimbot_enabled=" << g_cfg.aimbotEnabled << "\n";
     f << "aimbot_key=" << g_cfg.aimbotKey << "\n";
     f << "aimbot_mode=" << g_cfg.aimbotMode << "\n";
@@ -137,6 +143,8 @@ void config::Save(const char* path)
     f << "menu_key=" << g_cfg.menuKey << "\n";
     f << "ui_theme=" << g_cfg.uiTheme << "\n";
     f << "ui_layout=" << g_cfg.uiLayout << "\n";
+    f << "ui_scale=" << g_cfg.uiScale << "\n";
+    f << "fps_cap=" << g_cfg.fpsCap << "\n";
     f << "accent_r=" << g_cfg.accent[0] << "\n";
     f << "accent_g=" << g_cfg.accent[1] << "\n";
     f << "accent_b=" << g_cfg.accent[2] << "\n";
