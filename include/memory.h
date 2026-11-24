@@ -25,6 +25,13 @@ public:
         return buf;
     }
 
+    // bulk read - one RPM for a whole struct region
+    bool Read(uintptr_t address, void* buf, size_t size) const
+    {
+        SIZE_T read = 0;
+        return ReadProcessMemory(hProcess, (LPCVOID)address, buf, size, &read) && read == size;
+    }
+
     template <typename T>
     bool Write(uintptr_t address, const T& value) const
     {

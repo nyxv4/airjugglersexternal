@@ -19,6 +19,7 @@
 #include <cstdarg>
 #include <cstdlib>
 #include <cctype>
+#include <cstring>
 
 static void Log(const char* fmt, ...)
 {
@@ -73,6 +74,7 @@ struct PlayerBox
     uintptr_t headAddr;
     std::string kit;
     ImU32 kitCol = 0;
+    std::vector<uintptr_t> hitPrims; // primitive ptrs for hitbox esp
 };
 
 static std::vector<PlayerBox> g_players;
@@ -237,6 +239,8 @@ static std::string ToLower(std::string s)
     return s;
 }
 
+static bool IsPartClass(const std::string& c);
+
 // per-player cache: part/humanoid addresses only change on respawn,
 // so re-resolve them at ~2hz instead of enumerating children every frame
 struct CachedPlayer
@@ -249,6 +253,9 @@ struct CachedPlayer
     std::string kit;
     ImU32 kitCol = 0;
     DWORD refreshAt = 0;
+    // primitive pointers for every body part - hitbox esp reads pos/size/
+    // rotation straight off these, no per-frame child walks
+    std::vector<uintptr_t> prims;
     // attribute scans are expensive (dozens of RPM reads per player) -
     // throttle to ~4s, rescan immediately on respawn (character change)
     uintptr_t attrChar = 0;
@@ -262,6 +269,7 @@ static void RefreshPlayer(CachedPlayer& cp, const Instance& p)
     cp.character = p.GetCharacter().addr;
     cp.head = cp.hrp = cp.humanoid = 0;
     cp.torso = cp.upperTorso = cp.lowerTorso = 0;
+    cp.prims.clear();
     cp.team = g_mem.ReadPtr(p.addr + OFF("Player", "Team"));
     cp.refreshAt = GetTickCount() + 500;
 
@@ -292,6 +300,12 @@ static void RefreshPlayer(CachedPlayer& cp, const Instance& p)
         else if (cn == "UpperTorso") cp.upperTorso = c.addr;
         else if (cn == "LowerTorso") cp.lowerTorso = c.addr;
         if (cp.humanoid == 0 && c.GetClassName() == "Humanoid") cp.humanoid = c.addr;
+        // hitbox esp: cache primitive ptrs for every body part
+        if (g_cfg.espHitbox && cp.prims.size() < 16 && IsPartClass(c.GetClassName()))
+        {
+            uintptr_t prim = g_mem.ReadPtr(c.addr + OFF("BasePart", "Primitive"));
+            if (prim) cp.prims.push_back(prim);
+        }
     }
     // display names sometimes carry the kit ("xX_Kitslayer_Xx" etc.)
     if (cp.kit.empty())
@@ -356,6 +370,7 @@ struct NpcCache
     uintptr_t model = 0;
     std::string name;
     uintptr_t head = 0, hrp = 0, torso = 0, upper = 0, lower = 0, humanoid = 0;
+    std::vector<uintptr_t> prims;
 };
 static std::vector<NpcCache> g_npcs;
 static DWORD g_npcScanAt = 0;
@@ -375,6 +390,11 @@ static void ScanNpcModel(uintptr_t maddr, const std::string& mname,
         else if (cn == "UpperTorso") n.upper = c.addr;
         else if (cn == "LowerTorso") n.lower = c.addr;
         if (!n.humanoid && c.GetClassName() == "Humanoid") n.humanoid = c.addr;
+        if (g_cfg.espHitbox && n.prims.size() < 16 && IsPartClass(c.GetClassName()))
+        {
+            uintptr_t prim = g_mem.ReadPtr(c.addr + OFF("BasePart", "Primitive"));
+            if (prim) n.prims.push_back(prim);
+        }
     }
     if (n.head && n.hrp && n.humanoid) g_npcs.push_back(n);
 }
@@ -783,6 +803,7 @@ static void CollectPlayers()
         pb.teammate = teammate;
         pb.kit = cp.kit;
         pb.kitCol = cp.kitCol;
+        pb.hitPrims = cp.prims;
         if (cp.humanoid)
         {
             pb.health = g_mem.Read<float>(cp.humanoid + OFF("Humanoid", "Health"));
@@ -839,6 +860,7 @@ static void CollectPlayers()
         }
         pb.dist = dist;
         pb.teammate = false;
+        pb.hitPrims = n.prims;
         if (n.humanoid)
         {
             pb.health = g_mem.Read<float>(n.humanoid + OFF("Humanoid", "Health"));
@@ -950,6 +972,112 @@ static void DrawEsp(ImDrawList* dl)
         }
         if (g_cfg.espSnaplines)
             dl->AddLine({ g_localX, (float)g_height }, { cx, p.y2 }, c, 1.f);
+    }
+}
+
+// ---------------- hitbox esp ----------------
+// draws each body part's real bounds: Primitive rotation+position+size
+// -> 8 corners -> view-projection -> screen rect. visual only - the
+// hitbox expander is what actually changes game hitreg.
+
+struct PrimSnapshot { Vec3 pos, size; float rot[9]; };
+
+// rotation/position/size sit within ~0x120 bytes of each other on the
+// primitive - one bulk read grabs the whole box
+static bool ReadPrimBox(uintptr_t prim, PrimSnapshot& s)
+{
+    static const uintptr_t rO = OFF("Primitive", "Rotation");
+    static const uintptr_t pO = OFF("Primitive", "Position");
+    static const uintptr_t sO = OFF("Primitive", "Size");
+    uintptr_t lo = rO, hi = sO + 16;
+    if (pO < lo) lo = pO;
+    if (hi - lo > 0x400) return false;
+
+    unsigned char buf[0x400];
+    if (!g_mem.Read(prim + lo, buf, hi - lo)) return false;
+    memcpy(s.rot, buf + (rO - lo), sizeof(s.rot));
+    memcpy(&s.pos,  buf + (pO - lo), sizeof(s.pos));
+    memcpy(&s.size, buf + (sO - lo), sizeof(s.size));
+    return true;
+}
+
+// projection context - same math as sdk::WorldToScreen but the view
+// matrix + window rect are fetched once per frame instead of per point
+struct ProjCtx { Matrix4 m; float rw, rh, ox, oy; };
+
+static bool InitProj(ProjCtx& p)
+{
+    HWND hwnd = FindWindowW(nullptr, L"Roblox");
+    auto& w = sdk::Get();
+    if (!hwnd || !w.visualEngine) return false;
+    RECT rc; POINT pt{};
+    if (!GetClientRect(hwnd, &rc) || !ClientToScreen(hwnd, &pt)) return false;
+    p.rw = (float)(rc.right - rc.left); p.rh = (float)(rc.bottom - rc.top);
+    p.ox = (float)pt.x; p.oy = (float)pt.y;
+    p.m = g_mem.Read<Matrix4>(w.visualEngine + OFF("VisualEngine", "ViewMatrix"));
+    return true;
+}
+
+static bool ProjPt(const ProjCtx& p, const Vec3& w, Vec2& out)
+{
+    float x = w.x * p.m.m[0] + w.y * p.m.m[1] + w.z * p.m.m[2] + p.m.m[3];
+    float y = w.x * p.m.m[4] + w.y * p.m.m[5] + w.z * p.m.m[6] + p.m.m[7];
+    float z = w.x * p.m.m[8] + w.y * p.m.m[9] + w.z * p.m.m[10] + p.m.m[11];
+    float wv = w.x * p.m.m[12] + w.y * p.m.m[13] + w.z * p.m.m[14] + p.m.m[15];
+    if (wv < 0.1f) { out = { -1, -1 }; return false; }
+    float inv = 1.f / wv;
+    out.x = ((p.rw / 2) * (x * inv) + (p.rw / 2)) + p.ox;
+    out.y = (-(p.rh / 2) * (y * inv) + (p.rh / 2)) + p.oy;
+    return true;
+}
+
+static void DrawHitboxEsp(ImDrawList* dl)
+{
+    if (!g_cfg.espHitbox) return;
+    ProjCtx pj;
+    if (!InitProj(pj)) return;
+
+    for (auto& p : g_players)
+    {
+        if (p.hitPrims.empty()) continue;
+        if (p.dist > g_cfg.espHitboxDist) continue;
+        if (!g_cfg.espShowTeammates && p.teammate) continue;
+        if (p.maxHealth > 0.f && p.health <= 0.f) continue; // dead
+        ImU32 c = p.teammate ? IM_COL32(80, 200, 120, 255) : IM_COL32(255, 90, 90, 255);
+
+        for (uintptr_t prim : p.hitPrims)
+        {
+            PrimSnapshot s;
+            if (!ReadPrimBox(prim, s)) continue;
+            if (s.size.x < 0.05f || s.size.y < 0.05f || s.size.z < 0.05f) continue;
+
+            // rotation read as 9 floats; all-zero means identity
+            bool ident = true;
+            for (int i = 0; i < 9; i++)
+                if (s.rot[i] != 0.f) { ident = false; break; }
+            if (ident) { memset(s.rot, 0, sizeof(s.rot)); s.rot[0] = s.rot[4] = s.rot[8] = 1.f; }
+
+            float hx = s.size.x / 2.f, hy = s.size.y / 2.f, hz = s.size.z / 2.f;
+            float mnx = 1e9f, mny = 1e9f, mxx = -1e9f, mxy = -1e9f;
+            int n = 0;
+            for (int i = 0; i < 8; i++)
+            {
+                float lx = (i & 1) ? hx : -hx;
+                float ly = (i & 2) ? hy : -hy;
+                float lz = (i & 4) ? hz : -hz;
+                Vec3 w{
+                    s.pos.x + s.rot[0] * lx + s.rot[1] * ly + s.rot[2] * lz,
+                    s.pos.y + s.rot[3] * lx + s.rot[4] * ly + s.rot[5] * lz,
+                    s.pos.z + s.rot[6] * lx + s.rot[7] * ly + s.rot[8] * lz };
+                Vec2 sc;
+                if (!ProjPt(pj, w, sc)) continue;
+                if (sc.x < mnx) mnx = sc.x; if (sc.x > mxx) mxx = sc.x;
+                if (sc.y < mny) mny = sc.y; if (sc.y > mxy) mxy = sc.y;
+                n++;
+            }
+            if (n >= 4 && mxx - mnx > 1.f && mxy - mny > 1.f)
+                dl->AddRect({ mnx, mny }, { mxx, mxy }, c, 0.f, 0, 1.f);
+        }
     }
 }
 
@@ -1856,6 +1984,10 @@ static void MenuVisuals()
     ImGui::Checkbox("Team check", &g_cfg.espTeamCheck);
     ImGui::Checkbox("Show teammates", &g_cfg.espShowTeammates);
     ImGui::Checkbox("Kit ESP", &g_cfg.espKit);
+    ImGui::Checkbox("Hitbox ESP", &g_cfg.espHitbox);
+    if (g_cfg.espHitbox)
+        ImGui::SliderFloat("Hitbox dist", &g_cfg.espHitboxDist, 25.f, 500.f, "%.0f studs");
+    ImGui::TextDisabled("Draws real body-part bounds - visual only, doesn't change hitreg");
     ImGui::Checkbox("Object ESP", &g_cfg.objEsp);
     if (g_cfg.objEsp)
         ImGui::SliderFloat("Object dist", &g_cfg.objEspDist, 25.f, 1000.f, "%.0f studs");
@@ -2255,7 +2387,7 @@ void Overlay::Run()
         ImGui::NewFrame();
 
         ImDrawList* bg = ImGui::GetBackgroundDrawList();
-        if (g_mem.IsAttached() && focused) { DrawEsp(bg); DrawObjEsp(bg); }
+        if (g_mem.IsAttached() && focused) { DrawEsp(bg); DrawObjEsp(bg); DrawHitboxEsp(bg); }
         // feature status line - shows what's actually armed right now so
         // there's no guessing whether a toggle/key actually engaged
         {

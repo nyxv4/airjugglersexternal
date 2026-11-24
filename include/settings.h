@@ -16,6 +16,10 @@ struct Settings
     // kit-specific object esp (hidden metal, orbs, bees, traps...)
     bool objEsp = true;
     float objEspDist = 250.f;   // studs
+    // hitbox esp: draws each body part's real bounds (pos+size+rotation
+    // projected to screen) - visual only, separate from the expander
+    bool espHitbox = false;
+    float espHitboxDist = 200.f; // studs
 
     // aimbot (hold key)
     bool aimbotEnabled = true;
@@ -99,7 +103,7 @@ struct Settings
 
 extern Settings g_cfg;
 
-inline const char* NYX_VERSION = "35";
+inline const char* NYX_VERSION = "36";
 
 namespace config
 {

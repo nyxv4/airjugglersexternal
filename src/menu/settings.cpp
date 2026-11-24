@@ -41,6 +41,8 @@ void config::Load(const char* path)
     g_cfg.espKit = get("esp_kit", "1") == "1";
     g_cfg.objEsp = get("obj_esp", "1") == "1";
     g_cfg.objEspDist = toFloat(get("obj_esp_dist", "250"), 250.f);
+    g_cfg.espHitbox = get("esp_hitbox", "0") == "1";
+    g_cfg.espHitboxDist = toFloat(get("esp_hitbox_dist", "200"), 200.f);
     g_cfg.aimbotEnabled = get("aimbot_enabled", "1") == "1";
     g_cfg.aimbotKey = toInt(get("aimbot_key", "88"), 88);
     g_cfg.aimbotMode = clampi(toInt(get("aimbot_mode", "1"), 1), 0, 2);
@@ -109,6 +111,8 @@ void config::Save(const char* path)
     f << "esp_kit=" << g_cfg.espKit << "\n";
     f << "obj_esp=" << g_cfg.objEsp << "\n";
     f << "obj_esp_dist=" << g_cfg.objEspDist << "\n";
+    f << "esp_hitbox=" << g_cfg.espHitbox << "\n";
+    f << "esp_hitbox_dist=" << g_cfg.espHitboxDist << "\n";
     f << "aimbot_enabled=" << g_cfg.aimbotEnabled << "\n";
     f << "aimbot_key=" << g_cfg.aimbotKey << "\n";
     f << "aimbot_mode=" << g_cfg.aimbotMode << "\n";
