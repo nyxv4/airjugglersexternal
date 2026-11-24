@@ -48,7 +48,7 @@ struct Settings
 
     // reach (tool handle resize)
     bool reachEnabled = false;
-    float reachStuds = 6.5f;
+    float reachStuds = 6.f;      // +6 studs over normal (~10.5 total)
 
     // hit fix: plants your character while swinging so hits register
     // consistently regardless of ping/fps
@@ -56,7 +56,7 @@ struct Settings
 
     // killaura (auto-aim + click at CPS within range/angle)
     bool killauraEnabled = false;
-    float kaCps = 12.f;          // attacks per second
+    float kaCps = 20.f;          // attacks per second (slider to 40)
     float kaSwingRange = 18.f;   // target acquisition range (studs)
     float kaAttackRange = 18.f;  // click range (studs)
     float kaAngle = 90.f;        // max facing angle, 1-360
@@ -77,7 +77,7 @@ struct Settings
 
 extern Settings g_cfg;
 
-inline const char* NYX_VERSION = "18";
+inline const char* NYX_VERSION = "19";
 
 namespace config
 {

@@ -718,17 +718,13 @@ static void RunHitbox()
         {
             if (cp.character == 0) continue;
             if (localTeam && cp.team == localTeam) continue; // don't expand teammates
-            uintptr_t parts[5] = { cp.head, cp.hrp, cp.torso, cp.upperTorso, cp.lowerTorso };
-            for (uintptr_t pa : parts)
-                if (pa) { g_hitboxParts.push_back(pa); seen.insert(pa); }
+            // HumanoidRootPart only - it's invisible so the expanded
+            // hitbox doesn't render as a big box on the character
+            if (cp.hrp) { g_hitboxParts.push_back(cp.hrp); seen.insert(cp.hrp); }
         }
         // dummies/npcs too - no team check, they're always enemies
         for (auto& n : g_npcs)
-        {
-            uintptr_t parts[5] = { n.head, n.hrp, n.torso, n.upper, n.lower };
-            for (uintptr_t pa : parts)
-                if (pa) { g_hitboxParts.push_back(pa); seen.insert(pa); }
-        }
+            if (n.hrp) { g_hitboxParts.push_back(n.hrp); seen.insert(n.hrp); }
         for (auto it = g_hitboxMap.begin(); it != g_hitboxMap.end();)
             it = seen.count(it->first) ? std::next(it) : g_hitboxMap.erase(it);
     }
