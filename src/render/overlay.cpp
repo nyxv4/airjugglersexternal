@@ -89,8 +89,69 @@ static float g_localX, g_localY; // screen center of roblox client
 // player/backpack/character child names (tools, values, folders)
 struct KitEntry { const char* key; const char* label; ImU32 col; };
 static const KitEntry kKits[] = {
-    // bedwars kits
+    // real bedwars kit ids (PlayingAsKits attribute values) - specific
+    // names first so substring matching doesn't get shadowed
+    { "spirit_assassin", "SPIRIT ASSASSIN", IM_COL32(90, 70, 120, 255) },
     { "void_knight", "VOID KNIGHT", IM_COL32(120, 90, 220, 255) },
+    { "void_regent", "VOID REGENT", IM_COL32(140, 100, 240, 255) },
+    { "void_hunter", "VOID HUNTER", IM_COL32(110, 80, 200, 255) },
+    { "block_kicker", "BLOCK KICKER", IM_COL32(200, 160, 60, 255) },
+    { "elk_master", "ELK MASTER", IM_COL32(160, 110, 60, 255) },
+    { "black_market_trader", "BLACK MARKET", IM_COL32(60, 50, 70, 255) },
+    { "ghost_catcher", "GHOST CATCHER", IM_COL32(160, 200, 230, 255) },
+    { "sheep_herder", "SHEEP HERDER", IM_COL32(220, 220, 240, 255) },
+    { "star_collector", "STAR COLLECTOR", IM_COL32(240, 220, 90, 255) },
+    { "metal_detector", "METAL DETECTOR", IM_COL32(170, 170, 180, 255) },
+    { "farmer_cletus", "FARMER", IM_COL32(140, 190, 80, 255) },
+    { "winter_lady", "WINTER LADY", IM_COL32(160, 210, 240, 255) },
+    { "kitslinger", "KITSLINGER", IM_COL32(200, 60, 140, 255) },
+    { "eldertree", "ELDERTREE", IM_COL32(90, 160, 70, 255) },
+    { "gingerbread", "GINGERBREAD", IM_COL32(200, 120, 60, 255) },
+    { "earthshaper", "EARTHSHAPER", IM_COL32(150, 110, 70, 255) },
+    { "venomancer", "VENOMANCER", IM_COL32(90, 160, 60, 255) },
+    { "battlemage", "BATTLEMAGE", IM_COL32(120, 100, 220, 255) },
+    { "necromancer", "NECROMANCER", IM_COL32(70, 50, 90, 255) },
+    { "ghost", "GHOST", IM_COL32(170, 190, 220, 255) },
+    { "alchemist", "ALCHEMIST", IM_COL32(120, 200, 90, 255) },
+    { "beekeeper", "BEEKEEPER", IM_COL32(240, 200, 60, 255) },
+    { "bigman", "BIGMAN", IM_COL32(140, 100, 70, 255) },
+    { "miner", "MINER", IM_COL32(160, 120, 80, 255) },
+    { "trapper", "TRAPPER", IM_COL32(150, 110, 70, 255) },
+    { "battery", "BATTERY", IM_COL32(240, 200, 60, 255) },
+    { "summoner", "SUMMONER", IM_COL32(90, 200, 120, 255) },
+    { "tinker", "TINKER", IM_COL32(200, 160, 80, 255) },
+    { "hannah", "HANNAH", IM_COL32(230, 150, 200, 255) },
+    { "dasher", "DASHER", IM_COL32(120, 200, 230, 255) },
+    { "regent", "REGENT", IM_COL32(170, 130, 230, 255) },
+    { "jade", "JADE", IM_COL32(60, 190, 110, 255) },
+    { "aery", "AERY", IM_COL32(140, 200, 230, 255) },
+    { "berserker", "BERSERKER", IM_COL32(200, 60, 50, 255) },
+    { "disruptor", "DISRUPTOR", IM_COL32(200, 80, 160, 255) },
+    { "mimic", "MIMIC", IM_COL32(160, 140, 110, 255) },
+    { "yeti", "YETI", IM_COL32(190, 220, 240, 255) },
+    { "kaliyah", "KALIYAH", IM_COL32(220, 90, 200, 255) },
+    { "phoenix", "PHOENIX", IM_COL32(240, 120, 50, 255) },
+    { "raven", "RAVEN", IM_COL32(60, 60, 80, 255) },
+    { "ninja", "NINJA", IM_COL32(50, 50, 60, 255) },
+    { "pyro", "PYRO", IM_COL32(230, 90, 40, 255) },
+    { "tank", "TANK", IM_COL32(140, 140, 150, 255) },
+    { "golem", "GOLEM", IM_COL32(130, 120, 110, 255) },
+    { "pirate", "PIRATE", IM_COL32(80, 110, 160, 255) },
+    { "crypt", "CRYPT", IM_COL32(90, 70, 60, 255) },
+    { "sorcerer", "SORCERER", IM_COL32(140, 100, 230, 255) },
+    { "engineer", "ENGINEER", IM_COL32(200, 150, 80, 255) },
+    { "lancer", "LANCER", IM_COL32(170, 170, 190, 255) },
+    { "tracking", "TRACKING", IM_COL32(100, 160, 220, 255) },
+    { "mystery", "MYSTERY", IM_COL32(180, 120, 220, 255) },
+    { "artificer", "ARTIFICER", IM_COL32(200, 140, 90, 255) },
+    { "demon", "DEMON", IM_COL32(180, 40, 40, 255) },
+    { "mana", "MANA", IM_COL32(90, 140, 230, 255) },
+    { "farmer", "FARMER", IM_COL32(140, 190, 80, 255) },
+    { "guardian", "GUARDIAN", IM_COL32(160, 170, 200, 255) },
+    { "rogue", "ROGUE", IM_COL32(80, 80, 90, 255) },
+    { "snowman", "SNOWMAN", IM_COL32(200, 220, 240, 255) },
+    // bedwars kits
+    { "voidknight", "VOID KNIGHT", IM_COL32(120, 90, 220, 255) },
     { "voidknight", "VOID KNIGHT", IM_COL32(120, 90, 220, 255) },
     { "block_kicker", "BLOCK KICKER", IM_COL32(200, 160, 60, 255) },
     { "blockkicker", "BLOCK KICKER", IM_COL32(200, 160, 60, 255) },
@@ -158,8 +219,15 @@ static const KitEntry kKits[] = {
 
 static const KitEntry* MatchKit(const std::string& lower)
 {
+    // pass 1: value contains the kit key ("void_knight" -> VOID KNIGHT)
     for (auto& k : kKits)
         if (lower.find(k.key) != std::string::npos) return &k;
+    // pass 2: abbreviated value contained in a kit key - only for values
+    // >=4 chars so "pyro" can't match everything, and "none" never does
+    if (lower.size() >= 4 && lower != "none")
+        for (auto& k : kKits)
+            if (strlen(k.key) > lower.size() && std::string(k.key).find(lower) != std::string::npos)
+                return &k;
     return nullptr;
 }
 
@@ -1536,6 +1604,30 @@ static void MenuMisc()
     ImGui::Text("PlaceId: %llu", (unsigned long long)g_lastPlaceId);
     ImGui::Text("BedWars: %s", g_isBedWars == 1 ? "yes" : (g_isBedWars == 0 ? "NO (combat off)" : "unknown"));
     ImGui::Text("Offsets: %s", offsets::Ready() ? offsets::ClientVersion().c_str() : "fetching...");
+    // kit attribute diagnostic - shows the raw PlayingAsKits value so we
+    // can tell a broken attribute read from a kit-name mismatch
+    {
+        static DWORD attrDiagAt = 0;
+        static std::string attrDiag;
+        if (GetTickCount() >= attrDiagAt && sdk::Get().localPlayer)
+        {
+            attrDiagAt = GetTickCount() + 1000;
+            Instance lp(sdk::Get().localPlayer);
+            auto attrs = lp.GetAttributes(false);
+            attrDiag.clear();
+            for (auto& [k, v] : attrs)
+            {
+                std::string lk = ToLower(k);
+                if (lk.find("kit") != std::string::npos)
+                { attrDiag = k + " = " + v; break; }
+            }
+            char tmp[32]; snprintf(tmp, sizeof(tmp), " (%zu attrs)", attrs.size());
+            attrDiag = attrDiag.empty()
+                ? std::string("none") + tmp
+                : attrDiag + tmp;
+        }
+        ImGui::Text("Kit attr: %s", attrDiag.c_str());
+    }
     ImGui::Separator();
     ImGui::Text("Configs");
     static char cfgName[64] = "default";
