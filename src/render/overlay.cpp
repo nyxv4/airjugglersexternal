@@ -62,6 +62,17 @@ static int g_width = 0, g_height = 0;
 
 // ---------------- esp/aim data ----------------
 
+// r15 skeleton parts, cached per player for skeleton esp
+enum SkelIdx
+{
+    SK_UPPERT, SK_LOWERT,
+    SK_LUA, SK_LLA, SK_LH,   // left arm: upper/lower/hand
+    SK_RUA, SK_RLA, SK_RH,   // right arm
+    SK_LUL, SK_LLL, SK_LF,   // left leg: upper/lower/foot
+    SK_RUL, SK_RLL, SK_RF,   // right leg
+    SK_COUNT
+};
+
 struct PlayerBox
 {
     float x1, y1, x2, y2;
@@ -76,6 +87,8 @@ struct PlayerBox
     ImU32 kitCol = 0;
     bool kitAttr = false; // kit came from a replicated attribute (reliable)
     bool isNpc = false;   // dummy/bot - kit ESP doesn't apply
+    Vec3 skelPos[SK_COUNT]{}; // world positions, zero = missing
+    bool skelOk = false;
     std::vector<uintptr_t> hitPrims; // primitive ptrs for hitbox esp
 };
 
@@ -262,6 +275,8 @@ struct CachedPlayer
     // primitive pointers for every body part - hitbox esp reads pos/size/
     // rotation straight off these, no per-frame child walks
     std::vector<uintptr_t> prims;
+    // r15 limb part addresses for skeleton esp (0 = not present)
+    uintptr_t skel[SK_COUNT] = {};
     // attribute scans are expensive (dozens of RPM reads per player) -
     // throttle to ~4s, rescan immediately on respawn (character change)
     uintptr_t attrChar = 0;
@@ -276,6 +291,7 @@ static void RefreshPlayer(CachedPlayer& cp, const Instance& p)
     cp.head = cp.hrp = cp.humanoid = 0;
     cp.torso = cp.upperTorso = cp.lowerTorso = 0;
     cp.prims.clear();
+    memset(cp.skel, 0, sizeof(cp.skel));
     cp.team = g_mem.ReadPtr(p.addr + OFF("Player", "Team"));
     cp.refreshAt = GetTickCount() + 500;
 
@@ -307,8 +323,19 @@ static void RefreshPlayer(CachedPlayer& cp, const Instance& p)
         if (cn == "Head") cp.head = c.addr;
         else if (cn == "HumanoidRootPart") cp.hrp = c.addr;
         else if (cn == "Torso") { cp.hrp = cp.hrp ? cp.hrp : c.addr; cp.torso = c.addr; }
-        else if (cn == "UpperTorso") cp.upperTorso = c.addr;
-        else if (cn == "LowerTorso") cp.lowerTorso = c.addr;
+        else if (cn == "UpperTorso") { cp.upperTorso = c.addr; cp.skel[SK_UPPERT] = c.addr; }
+        else if (cn == "LowerTorso") { cp.lowerTorso = c.addr; cp.skel[SK_LOWERT] = c.addr; }
+        // r15 limb parts for skeleton esp - name matched once at refresh
+        else
+        {
+            static const struct { const char* n; int i; } sk[] = {
+                {"LeftUpperArm", SK_LUA}, {"LeftLowerArm", SK_LLA}, {"LeftHand", SK_LH},
+                {"RightUpperArm", SK_RUA}, {"RightLowerArm", SK_RLA}, {"RightHand", SK_RH},
+                {"LeftUpperLeg", SK_LUL}, {"LeftLowerLeg", SK_LLL}, {"LeftFoot", SK_LF},
+                {"RightUpperLeg", SK_RUL}, {"RightLowerLeg", SK_RLL}, {"RightFoot", SK_RF},
+            };
+            for (auto& s : sk) if (cn == s.n) { cp.skel[s.i] = c.addr; break; }
+        }
         if (cp.humanoid == 0 && c.GetClassName() == "Humanoid") cp.humanoid = c.addr;
         // hitbox esp: cache primitive ptrs for every body part
         if (g_cfg.espHitbox && cp.prims.size() < 16 && IsPartClass(c.GetClassName()))
@@ -814,6 +841,13 @@ static void CollectPlayers()
         pb.kitCol = cp.kitCol;
         pb.kitAttr = cp.kitAttr;
         pb.hitPrims = cp.prims;
+        // skeleton esp: world positions for each cached r15 part
+        if (g_cfg.espSkeleton)
+        {
+            for (int i = 0; i < SK_COUNT; i++)
+                if (cp.skel[i]) pb.skelPos[i] = Instance::PartPosition(cp.skel[i]);
+            pb.skelOk = true;
+        }
         if (cp.humanoid)
         {
             pb.health = g_mem.Read<float>(cp.humanoid + OFF("Humanoid", "Health"));
@@ -956,6 +990,10 @@ static void DrawEsp(ImDrawList* dl)
             continue;
         ImU32 c = p.teammate ? colTeam : colEnemy;
         float cx = (p.x1 + p.x2) / 2.f;
+
+        if (g_cfg.espChams)
+            dl->AddRectFilled({ p.x1, p.y1 }, { p.x2, p.y2 },
+                p.teammate ? IM_COL32(60, 200, 100, 35) : IM_COL32(255, 70, 70, 35));
 
         if (g_cfg.espBox)
             dl->AddRect({ p.x1, p.y1 }, { p.x2, p.y2 }, c, 0.f, 0, 1.5f);
@@ -1116,6 +1154,57 @@ static void DrawHitboxEsp(ImDrawList* dl)
     }
 }
 
+// ---------------- skeleton esp ----------------
+// connects cached r15 limb positions with lines - head/torso/hrp come
+// from PlayerBox, limbs from skelPos (world space, projected once)
+
+static void DrawSkeletonEsp(ImDrawList* dl)
+{
+    if (!g_cfg.espSkeleton || g_players.empty()) return;
+    ProjCtx pj;
+    if (!InitProj(pj)) return;
+
+    // joint pairs: a -> b (SK_* indices into skelPos, -1 = head/rootWorld)
+    static const int pairs[][2] = {
+        { -1, SK_UPPERT }, { SK_UPPERT, SK_LOWERT }, { SK_LOWERT, -2 },
+        { SK_UPPERT, SK_LUA }, { SK_LUA, SK_LLA }, { SK_LLA, SK_LH },
+        { SK_UPPERT, SK_RUA }, { SK_RUA, SK_RLA }, { SK_RLA, SK_RH },
+        { SK_LOWERT, SK_LUL }, { SK_LUL, SK_LLL }, { SK_LLL, SK_LF },
+        { SK_LOWERT, SK_RUL }, { SK_RUL, SK_RLL }, { SK_RLL, SK_RF },
+    };
+
+    for (auto& p : g_players)
+    {
+        if (p.teammate && !g_cfg.espShowTeammates) continue;
+        if (p.dist > 400.f) continue;
+        ImU32 c = p.teammate ? IM_COL32(80, 200, 120, 200) : IM_COL32(255, 120, 120, 200);
+
+        // project all joints once
+        Vec2 sp[SK_COUNT]; bool ok[SK_COUNT] = {};
+        for (int i = 0; i < SK_COUNT; i++)
+            if (p.skelPos[i].x != 0.f || p.skelPos[i].y != 0.f || p.skelPos[i].z != 0.f)
+                ok[i] = ProjPt(pj, p.skelPos[i], sp[i]);
+        Vec2 sh, sr;
+        bool hok = ProjPt(pj, p.headWorld, sh);
+        bool rok = ProjPt(pj, p.rootWorld, sr);
+
+        for (auto& pr : pairs)
+        {
+            int a = pr[0], b = pr[1];
+            Vec2 pa, pb;
+            bool aok, bok;
+            if (a == -1)      { pa = sh; aok = hok; }
+            else if (a == -2) { pa = sr; aok = rok; }
+            else              { pa = sp[a]; aok = ok[a]; }
+            if (b == -1)      { pb = sh; bok = hok; }
+            else if (b == -2) { pb = sr; bok = rok; }
+            else              { pb = sp[b]; bok = ok[b]; }
+            if (aok && bok)
+                dl->AddLine({ pa.x, pa.y }, { pb.x, pb.y }, c, 1.2f);
+        }
+    }
+}
+
 // ---------------- input helpers ----------------
 
 static void mouse_move(int dx, int dy)
@@ -1125,6 +1214,14 @@ static void mouse_move(int dx, int dy)
     in.mi.dx = dx; in.mi.dy = dy;
     in.mi.dwFlags = MOUSEEVENTF_MOVE;
     SendInput(1, &in, sizeof(in));
+}
+
+static void mouse_click()
+{
+    INPUT in[2]{};
+    in[0].type = INPUT_MOUSE; in[0].mi.dwFlags = MOUSEEVENTF_LEFTDOWN;
+    in[1].type = INPUT_MOUSE; in[1].mi.dwFlags = MOUSEEVENTF_LEFTUP;
+    SendInput(2, in, sizeof(in[0]));
 }
 
 // subpixel accumulation shared by aimbot - fractional pixels
@@ -1536,6 +1633,28 @@ static void RunAimbot()
         mx += ((rand() % 200) - 100) / 100.f * g_cfg.aimbotShakeX;
         my += ((rand() % 200) - 100) / 100.f * g_cfg.aimbotShakeY;
     }
+    // humanized aim: irregular rhythm (~12% frame skip), subtle curved
+    // path (perpendicular arc, direction fixed per target name), and
+    // micro jitter on top of smoothing - looks less robotic than a
+    // constant-velocity pull
+    if (g_cfg.aimbotHuman)
+    {
+        if (rand() % 100 < 12) return;
+        float ddx = tx - cx, ddy = ty - cy;
+        float dd = sqrtf(ddx * ddx + ddy * ddy);
+        if (dd > 1.f)
+        {
+            float nx = -ddy / dd, ny = ddx / dd;
+            float arc = dd * 0.10f; if (arc > 14.f) arc = 14.f;
+            unsigned h = 0;
+            for (char ch : best->name) h = h * 31u + (unsigned char)ch;
+            float sgn = (h & 1u) ? 1.f : -1.f;
+            mx += nx * arc * sgn * 0.12f;
+            my += ny * arc * sgn * 0.12f;
+        }
+        mx += ((rand() % 120) - 60) / 100.f;
+        my += ((rand() % 120) - 60) / 100.f;
+    }
     mx *= g_cfg.aimbotSpeed;
     my *= g_cfg.aimbotSpeed;
     AimMove(mx, my);
@@ -1733,6 +1852,170 @@ static uintptr_t LocalHrpPrimitive()
 {
     if (!g_localHrpAddr) return 0;
     return g_mem.ReadPtr(g_localHrpAddr + OFF("BasePart", "Primitive"));
+}
+
+// ---------------- movement suite ----------------
+// humanoid writes: walkspeed + jumppower (originals restored on disable),
+// experimental fly (velocity along look dir while key held) and spin
+// (angular velocity while key held). all gated on focus + attach.
+
+static uintptr_t g_moveHum = 0;
+static DWORD g_moveRefresh = 0;
+static float g_origSpeed = -1.f, g_origJump = -1.f;
+static bool g_moveWasOn = false;
+
+static uintptr_t LocalHumanoid()
+{
+    auto& w = sdk::Get();
+    if (!w.localPlayer) return 0;
+    DWORD now = GetTickCount();
+    if (now >= g_moveRefresh || !g_moveHum)
+    {
+        g_moveRefresh = now + 1000;
+        g_moveHum = 0;
+        uintptr_t charAddr = g_mem.ReadPtr(w.localPlayer + OFF("Player", "ModelInstance"));
+        if (charAddr)
+            for (auto& c : Instance(charAddr).GetChildren())
+                if (c.GetClassName() == "Humanoid") { g_moveHum = c.addr; break; }
+    }
+    return g_moveHum;
+}
+
+static void RunMovement()
+{
+    bool want = (g_cfg.moveSpeedOn || g_cfg.jumpPowerOn || g_cfg.flyOn || g_cfg.spinOn)
+        && g_mem.IsAttached() && GameFocused();
+    if (!want)
+    {
+        // restore originals once when everything is off
+        if (g_moveWasOn && g_moveHum)
+        {
+            uintptr_t wsO = offsets::Get("Humanoid", "Walkspeed");
+            if (!wsO) wsO = offsets::Get("Humanoid", "WalkSpeed");
+            uintptr_t jpO = offsets::Get("Humanoid", "JumpPower");
+            if (g_origSpeed >= 0.f && wsO) g_mem.Write<float>(g_moveHum + wsO, g_origSpeed);
+            if (g_origJump >= 0.f && jpO) g_mem.Write<float>(g_moveHum + jpO, g_origJump);
+        }
+        g_moveWasOn = false;
+        g_origSpeed = g_origJump = -1.f;
+        return;
+    }
+    g_moveWasOn = true;
+    uintptr_t hum = LocalHumanoid();
+    if (!hum) return;
+
+    uintptr_t wsO = offsets::Get("Humanoid", "Walkspeed");
+    if (!wsO) wsO = offsets::Get("Humanoid", "WalkSpeed");
+    uintptr_t jpO = offsets::Get("Humanoid", "JumpPower");
+
+    if (g_cfg.moveSpeedOn && wsO)
+    {
+        if (g_origSpeed < 0.f) g_origSpeed = g_mem.Read<float>(hum + wsO);
+        g_mem.Write<float>(hum + wsO, g_cfg.moveSpeed);
+    }
+    else if (g_origSpeed >= 0.f && wsO)
+    {
+        g_mem.Write<float>(hum + wsO, g_origSpeed);
+        g_origSpeed = -1.f;
+    }
+
+    if (g_cfg.jumpPowerOn && jpO)
+    {
+        if (g_origJump < 0.f) g_origJump = g_mem.Read<float>(hum + jpO);
+        g_mem.Write<float>(hum + jpO, g_cfg.jumpPower);
+    }
+    else if (g_origJump >= 0.f && jpO)
+    {
+        g_mem.Write<float>(hum + jpO, g_origJump);
+        g_origJump = -1.f;
+    }
+
+    // fly: hold key -> velocity along HRP look vector * flySpeed.
+    // experimental - physics fights it, no noclip.
+    static bool flyWas = false;
+    uintptr_t fprim = 0;
+    float rot[9]{};
+    bool flyHeld = g_cfg.flyOn && (key_down(g_cfg.flyKey) != 0);
+    if (flyHeld)
+    {
+        fprim = LocalHrpPrimitive();
+        if (fprim)
+        {
+            uintptr_t rO = OFF("Primitive", "Rotation");
+            uintptr_t pO = OFF("Primitive", "Position");
+            uintptr_t lo = rO < pO ? rO : pO, hi = (rO > pO ? rO : pO) + 36;
+            if (hi - lo <= 0x400)
+            {
+                unsigned char buf[0x400];
+                if (g_mem.Read(fprim + lo, buf, hi - lo))
+                    memcpy(rot, buf + (rO - lo), 36);
+                else flyHeld = false;
+            }
+            else flyHeld = false;
+        }
+        else flyHeld = false;
+    }
+    if (flyHeld && fprim)
+    {
+        // look vector = -(3rd column) of the row-major rotation
+        float lx = -rot[2], ly = -rot[5], lz = -rot[8];
+        float ll = sqrtf(lx*lx + ly*ly + lz*lz);
+        if (ll > 0.01f)
+        {
+            lx = lx / ll * g_cfg.flySpeed; ly = ly / ll * g_cfg.flySpeed; lz = lz / ll * g_cfg.flySpeed;
+            g_mem.Write<Vec3>(fprim + OFF("Primitive", "AssemblyLinearVelocity"), { lx, ly, lz });
+        }
+    }
+    else if (flyWas && fprim)
+        g_mem.Write<Vec3>(fprim + OFF("Primitive", "AssemblyLinearVelocity"), { 0.f, 0.f, 0.f });
+    flyWas = flyHeld;
+
+    // spin: hold key -> angular velocity around Y (deg/s -> rad/s)
+    static bool spinWas = false;
+    bool spinHeld = g_cfg.spinOn && (key_down(g_cfg.spinKey) != 0);
+    uintptr_t sprim = spinHeld ? LocalHrpPrimitive() : 0;
+    if (sprim)
+        g_mem.Write<Vec3>(sprim + OFF("Primitive", "AssemblyAngularVelocity"),
+            { 0.f, g_cfg.spinSpeed / 57.2958f, 0.f });
+    else if (spinWas && fprim)
+        g_mem.Write<Vec3>(fprim + OFF("Primitive", "AssemblyAngularVelocity"), { 0.f, 0.f, 0.f });
+    spinWas = spinHeld;
+}
+
+// ---------------- trigger assist ----------------
+// clicks when the crosshair is inside an enemy ESP box - gated by the
+// same occlusion raycast when available. humanized-ish: min 120ms gap.
+
+static void RunTrigger()
+{
+    if (!g_cfg.triggerAssist || !g_mem.IsAttached() || !GameFocused()) return;
+    static DWORD lastClick = 0;
+    DWORD now = GetTickCount();
+    if (now - lastClick < 120) return;
+    float cx = g_localX, cy = g_localY;
+    for (auto& p : g_players)
+    {
+        if (p.teammate) continue;
+        if (cx < p.x1 || cx > p.x2 || cy < p.y1 || cy > p.y2) continue;
+        lastClick = now;
+        mouse_click();
+        break;
+    }
+}
+
+// ---------------- anti-afk ----------------
+// tiny alternating mouse move every ~70s resets the idle timer
+
+static void RunAntiAfk()
+{
+    if (!g_cfg.antiAfk || !g_mem.IsAttached()) return;
+    static DWORD lastNudge = 0;
+    static int dir = 1;
+    DWORD now = GetTickCount();
+    if (now - lastNudge < 70000) return;
+    lastNudge = now;
+    dir = -dir;
+    mouse_move(dir, 0);
 }
 
 // ---------------- anti-void ----------------
@@ -2036,6 +2319,12 @@ static void MenuAim()
     ImGui::Checkbox("Raycast debug", &g_cfg.aimbotRaycast);
     if (g_cfg.aimbotRaycast)
         ImGui::TextDisabled("Draws ray to target - green clear, red blocked");
+    ImGui::Checkbox("Humanized aim", &g_cfg.aimbotHuman);
+    if (g_cfg.aimbotHuman)
+        ImGui::TextDisabled("Arc + jitter + irregular rhythm");
+    ImGui::Checkbox("Trigger assist", &g_cfg.triggerAssist);
+    if (g_cfg.triggerAssist)
+        ImGui::TextDisabled("Clicks when crosshair is over an enemy");
     ImGui::Checkbox("Enable smoothing", &g_cfg.aimbotSmoothing);
     if (g_cfg.aimbotSmoothing)
     {
@@ -2124,6 +2413,8 @@ static void CardPlayerEsp()
     ImGui::Checkbox("Visible only", &g_cfg.espVisCheck);
     if (g_cfg.espVisCheck)
         ImGui::TextDisabled("Hides ESP on players behind walls (raycast)");
+    ImGui::Checkbox("Chams", &g_cfg.espChams);
+    ImGui::Checkbox("Skeleton", &g_cfg.espSkeleton);
 }
 
 static void CardWorldEsp()
@@ -2132,6 +2423,31 @@ static void CardWorldEsp()
     if (g_cfg.objEsp)
         ImGui::SliderFloat("Object dist", &g_cfg.objEspDist, 25.f, 1000.f, "%.0f studs");
     ImGui::TextDisabled("Marks hidden metal, orbs, bees, traps, drops and kit objects");
+}
+
+static void CardMovement()
+{
+    ImGui::Checkbox("Speed", &g_cfg.moveSpeedOn);
+    if (g_cfg.moveSpeedOn)
+        ImGui::SliderFloat("Walkspeed", &g_cfg.moveSpeed, 16.f, 100.f, "%.0f");
+    ImGui::Checkbox("Jump", &g_cfg.jumpPowerOn);
+    if (g_cfg.jumpPowerOn)
+        ImGui::SliderFloat("Jump power", &g_cfg.jumpPower, 0.f, 300.f, "%.0f");
+    ImGui::Checkbox("Anti-AFK", &g_cfg.antiAfk);
+    ImGui::Separator();
+    ImGui::TextDisabled("Experimental");
+    ImGui::Checkbox("Fly##mv", &g_cfg.flyOn);
+    if (g_cfg.flyOn)
+    {
+        RebindButton("Fly key", &g_cfg.flyKey);
+        ImGui::SliderFloat("Fly speed", &g_cfg.flySpeed, 5.f, 200.f, "%.0f");
+    }
+    ImGui::Checkbox("Spin##mv", &g_cfg.spinOn);
+    if (g_cfg.spinOn)
+    {
+        RebindButton("Spin key", &g_cfg.spinKey);
+        ImGui::SliderFloat("Spin deg/s", &g_cfg.spinSpeed, 0.f, 2000.f, "%.0f");
+    }
 }
 
 static void CardWorld()
@@ -2222,6 +2538,7 @@ static void MenuMiscTab()
 {
     ColsBegin();
     CardBegin("##m_world", "World"); CardWorld(); CardEnd();
+    CardBegin("##m_move", "Movement"); CardMovement(); CardEnd();
     CardBegin("##m_status", "Status"); CardStatus(); CardEnd();
     ColsMid();
     CardBegin("##m_keys", "Keybinds"); RebindButton("Menu", &g_cfg.menuKey); ImGui::TextDisabled("INSERT still toggles this menu"); CardEnd();
@@ -2631,7 +2948,10 @@ void Overlay::Run()
             // input-injecting features pause while the menu has focus -
             // otherwise aim assist fights your cursor inside the GUI
             if (!g_cfg.menuVisible)
-                RunHitfix(); // read-only movement diagnostics now
+                RunHitfix(); // diagnostics + swing-window plant
+            RunMovement();
+            RunTrigger();
+            RunAntiAfk();
             RunAntiVoid();
         }
 
@@ -2640,7 +2960,7 @@ void Overlay::Run()
         ImGui::NewFrame();
 
         ImDrawList* bg = ImGui::GetBackgroundDrawList();
-        if (g_mem.IsAttached() && focused) { DrawEsp(bg); DrawObjEsp(bg); DrawHitboxEsp(bg); }
+        if (g_mem.IsAttached() && focused) { DrawEsp(bg); DrawObjEsp(bg); DrawHitboxEsp(bg); DrawSkeletonEsp(bg); }
         // feature status line - shows what's actually armed right now so
         // there's no guessing whether a toggle/key actually engaged
         {

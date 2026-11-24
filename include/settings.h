@@ -14,6 +14,8 @@ struct Settings
     bool espShowTeammates = false;
     bool espKit = true;
     bool espVisCheck = false;   // hide ESP on players behind walls (raycast)
+    bool espChams = false;      // filled translucent box under ESP
+    bool espSkeleton = false;   // limb connection lines
     // kit-specific object esp (hidden metal, orbs, bees, traps...)
     bool objEsp = true;
     float objEspDist = 250.f;   // studs
@@ -31,6 +33,8 @@ struct Settings
     bool aimbotUseFov = true;
     bool aimbotDrawFov = false;
     bool aimbotRaycast = false;  // draw ray to target, green=clear red=blocked
+    bool aimbotHuman = false;    // humanized movement: arc + jitter + rhythm
+    bool triggerAssist = false;  // click when crosshair is over an enemy
     int aimbotFovColor = 0;      // 0 = white, 1 = black
     float aimbotSmoothX = 0.25f; // 0..1 per-axis pull strength
     float aimbotSmoothY = 0.25f;
@@ -84,12 +88,18 @@ struct Settings
     int uiLayout = 1;           // sidebar is the only layout now
     float accent[3] = { 0.55f, 0.30f, 0.95f }; // nyx purple
     float uiScale = 1.f;        // imgui font/global scale
+    // movement suite (humanoid writes - originals restored on disable)
+    bool moveSpeedOn = false; float moveSpeed = 24.f;  // walkspeed 16-100
+    bool jumpPowerOn = false; float jumpPower = 50.f;  // 0-300
+    bool flyOn = false; int flyKey = 0x56; float flySpeed = 40.f;   // V, experimental
+    bool spinOn = false; int spinKey = 0x42; float spinSpeed = 720.f; // B deg/s, experimental
+    bool antiAfk = false;
     float aimbotSpeed = 1.f;    // mouse movement multiplier 0.1-3.0
 };
 
 extern Settings g_cfg;
 
-inline const char* NYX_VERSION = "45";
+inline const char* NYX_VERSION = "46";
 
 namespace config
 {
