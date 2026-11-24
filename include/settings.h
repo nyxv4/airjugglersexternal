@@ -25,14 +25,20 @@ struct Settings
     bool aimbotEnabled = true;
     int aimbotKey = 0x58;        // X
     float aimbotFov = 120.f;     // px radius
-    float aimbotSmooth = 0.25f;  // 0..1
+    // vape-style: independent X/Y smoothing + shake, use/draw FOV toggles
+    bool aimbotUseFov = true;
+    bool aimbotDrawFov = false;
+    int aimbotFovColor = 0;      // 0 = white, 1 = black
+    float aimbotSmoothX = 0.25f; // 0..1 per-axis pull strength
+    float aimbotSmoothY = 0.25f;
+    float aimbotShakeX = 3.f;    // px jitter per axis
+    float aimbotShakeY = 3.f;
     float aimbotRange = 60.f;    // studs
     bool aimbotSmoothing = true;
-    int aimbotSmoothStyle = 1;   // 0 = None, 1 = Linear
     bool aimbotShake = false;
-    float aimbotShakePx = 3.f;
     bool aimbotPrediction = false;
     float aimbotPredMs = 150.f;
+    bool aimbotWallCheck = false; // occlusion test vs cached map geometry
     // activation modes: 0 = hold key, 1 = toggle key, 2 = always on
     int aimbotMode = 1;
     bool aimbotTeamCheck = true;
@@ -103,7 +109,7 @@ struct Settings
 
 extern Settings g_cfg;
 
-inline const char* NYX_VERSION = "37";
+inline const char* NYX_VERSION = "38";
 
 namespace config
 {

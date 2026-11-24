@@ -85,6 +85,7 @@ static bool g_aimbotHadTarget = false;
 static bool g_aimbotActive = false, g_kaActive = false, g_trigActive = false;
 static Vec2 g_localScreen;
 static float g_localX, g_localY; // screen center of roblox client
+static DWORD g_lastSwingAt = 0; // last manual or injected click - hitfix window
 
 // ---------------- kit esp ----------------
 // bedwars kits + generic kit names; matched case-insensitively against
@@ -1098,6 +1099,7 @@ static void mouse_click()
     in[0].type = INPUT_MOUSE; in[0].mi.dwFlags = MOUSEEVENTF_LEFTDOWN;
     in[1].type = INPUT_MOUSE; in[1].mi.dwFlags = MOUSEEVENTF_LEFTUP;
     SendInput(2, in, sizeof(in));
+    g_lastSwingAt = GetTickCount();
 }
 
 // subpixel accumulation shared by aimbot + killaura - fractional pixels
@@ -1272,6 +1274,113 @@ static bool IsBedWars()
     return g_isBedWars != 0; // unknown (-1) -> allow, don't break on read fail
 }
 
+// ---------------- wall check (occluder cache) ----------------
+// workspace parts that can block a shot. we can't raycast inside the
+// engine, so we cache nearby opaque geometry and slab-test rays against
+// their AABBs ourselves. character subtrees are excluded so players
+// never occlude each other.
+
+struct Occluder { uintptr_t prim = 0; Vec3 pos, size; };
+static std::vector<uintptr_t> g_occluderParts;
+static std::unordered_map<uintptr_t, Occluder> g_occluders;
+static DWORD g_occlScanAt = 0;
+
+static void ScanOccluders()
+{
+    g_occluderParts.clear();
+    g_occluders.clear();
+    auto& w = sdk::Get();
+    if (!w.workspace) return;
+
+    // never treat characters as walls
+    std::unordered_set<uintptr_t> chars;
+    for (auto& [a, cp] : g_cache) if (cp.character) chars.insert(cp.character);
+    for (auto& n : g_npcs) chars.insert(n.model);
+    if (w.localPlayer)
+    {
+        uintptr_t c = g_mem.ReadPtr(w.localPlayer + OFF("Player", "ModelInstance"));
+        if (c) chars.insert(c);
+    }
+
+    struct Frame { uintptr_t inst; int depth; };
+    std::vector<Frame> stack{ { w.workspace, 0 } };
+    int budget = 5000;
+    while (!stack.empty() && budget-- > 0)
+    {
+        Frame f = stack.back(); stack.pop_back();
+        if (chars.count(f.inst)) continue; // skip character subtrees
+        Instance in(f.inst);
+        if (IsPartClass(in.GetClassName()) && g_occluderParts.size() < 1500)
+            g_occluderParts.push_back(f.inst);
+        if (f.depth < 6)
+            for (auto& c : in.GetChildren())
+                stack.push_back({ c.addr, f.depth + 1 });
+    }
+}
+
+// lazily resolve pos+size - spread over frames so the warm-up doesn't
+// hitch the render thread
+static void WarmOccluders(int maxN)
+{
+    static const uintptr_t pO = OFF("Primitive", "Position");
+    static const uintptr_t sO = OFF("Primitive", "Size");
+    int n = 0;
+    for (uintptr_t part : g_occluderParts)
+    {
+        if (g_occluders.count(part)) continue;
+        uintptr_t prim = g_mem.ReadPtr(part + OFF("BasePart", "Primitive"));
+        Occluder o{}; o.prim = prim;
+        if (prim)
+        {
+            uintptr_t lo = pO < sO ? pO : sO, hi = (pO > sO ? pO : sO) + 16;
+            if (hi - lo <= 0x400)
+            {
+                unsigned char buf[0x400];
+                if (g_mem.Read(prim + lo, buf, hi - lo))
+                {
+                    memcpy(&o.pos,  buf + (pO - lo), 12);
+                    memcpy(&o.size, buf + (sO - lo), 12);
+                }
+            }
+        }
+        g_occluders[part] = o;
+        if (++n >= maxN) break;
+    }
+}
+
+// slab test: does segment eye->tgt pass through any cached part's AABB?
+static bool RayBlocked(const Vec3& eye, const Vec3& tgt)
+{
+    Vec3 d{ tgt.x - eye.x, tgt.y - eye.y, tgt.z - eye.z };
+    for (auto& [addr, o] : g_occluders)
+    {
+        if (!o.prim) continue;
+        float mn[3] = { o.pos.x - o.size.x / 2, o.pos.y - o.size.y / 2, o.pos.z - o.size.z / 2 };
+        float mx[3] = { o.pos.x + o.size.x / 2, o.pos.y + o.size.y / 2, o.pos.z + o.size.z / 2 };
+        float o3[3] = { eye.x, eye.y, eye.z }, d3[3] = { d.x, d.y, d.z };
+        float tmin = 0.f, tmax = 1.f;
+        bool hit = true;
+        for (int i = 0; i < 3 && hit; i++)
+        {
+            if (fabsf(d3[i]) < 1e-6f)
+            {
+                if (o3[i] < mn[i] || o3[i] > mx[i]) hit = false;
+            }
+            else
+            {
+                float inv = 1.f / d3[i];
+                float t1 = (mn[i] - o3[i]) * inv, t2 = (mx[i] - o3[i]) * inv;
+                if (t1 > t2) { float t = t1; t1 = t2; t2 = t; }
+                if (t1 > tmin) tmin = t1;
+                if (t2 < tmax) tmax = t2;
+                if (tmin > tmax) hit = false;
+            }
+        }
+        if (hit && tmin <= tmax && tmin < 1.f && tmax > 0.f) return true;
+    }
+    return false;
+}
+
 // ---------------- aimbot / triggerbot / hitbox ----------------
 
 static bool LocalToolIsBow();
@@ -1294,33 +1403,53 @@ static void RunAimbot()
     float bestD = 0.f;
     float tx = 0, ty = 0;
 
+    // wall check: warm the occluder cache gradually, rescan every ~8s
+    Vec3 eye{};
+    if (g_cfg.aimbotWallCheck)
+    {
+        DWORD now = GetTickCount();
+        if (now >= g_occlScanAt) { g_occlScanAt = now + 8000; ScanOccluders(); }
+        WarmOccluders(120);
+        Vec3 lp = CachedLocalPos();
+        eye = { lp.x, lp.y + 1.5f, lp.z };
+    }
+
     for (auto& p : g_players)
     {
         if (p.teammate && g_cfg.aimbotTeamCheck) continue;
         if (g_cfg.aimbotHealthCheck && p.health <= 0.f) continue;
         if (g_cfg.aimbotRangeCheck && p.dist > g_cfg.aimbotRange) continue;
+        // wall check: ray from eye to the target's chest must be clear
+        if (g_cfg.aimbotWallCheck && !g_occluders.empty() &&
+            RayBlocked(eye, { p.rootWorld.x, p.rootWorld.y + 1.f, p.rootWorld.z }))
+            continue;
 
         // prediction: lead the target by velocity * predMs
-        float px = p.headX, py = p.headY;
+        Vec3 aimWorld = p.headWorld;
         if (g_cfg.aimbotPrediction)
         {
-            Vec3 pred{ p.headWorld.x + p.headVel.x * (g_cfg.aimbotPredMs / 1000.f),
-                       p.headWorld.y + p.headVel.y * (g_cfg.aimbotPredMs / 1000.f),
-                       p.headWorld.z + p.headVel.z * (g_cfg.aimbotPredMs / 1000.f) };
-            Vec2 s2;
-            if (sdk::WorldToScreen(pred, s2) && s2.x != -1) { px = s2.x; py = s2.y; }
+            aimWorld.x += p.headVel.x * (g_cfg.aimbotPredMs / 1000.f);
+            aimWorld.y += p.headVel.y * (g_cfg.aimbotPredMs / 1000.f);
+            aimWorld.z += p.headVel.z * (g_cfg.aimbotPredMs / 1000.f);
         }
+        Vec2 hs;
+        if (!sdk::WorldToScreen(aimWorld, hs) || hs.x == -1) continue;
+        float px = hs.x, py = hs.y;
 
-        // shake: horizontal jitter on the target point
+        // shake: independent horizontal/vertical jitter on the aim point
         if (g_cfg.aimbotShake)
-            px += ((rand() % 200) - 100) / 100.f * g_cfg.aimbotShakePx;
+        {
+            px += ((rand() % 200) - 100) / 100.f * g_cfg.aimbotShakeX;
+            py += ((rand() % 200) - 100) / 100.f * g_cfg.aimbotShakeY;
+        }
 
         float dx = px - cx, dy = py - cy;
         float d = sqrtf(dx * dx + dy * dy);
-        if (d >= g_cfg.aimbotFov) continue;
-        // target priority: crosshair px / nearest studs / lowest hp
+        if (g_cfg.aimbotUseFov && d >= g_cfg.aimbotFov) continue;
+        // target priority: none / crosshair px / nearest studs / lowest hp
         float metric = (g_cfg.aimbotSort == 1) ? p.dist :
-                       (g_cfg.aimbotSort == 2) ? p.health : d;
+                       (g_cfg.aimbotSort == 2) ? p.health :
+                       (g_cfg.aimbotSort == 3) ? 0.f : d;
         if (metric < bestMetric) { bestMetric = metric; bestD = d; best = &p; tx = px; ty = py; }
     }
     if (!best) { g_aimbotHadTarget = false; return; }
@@ -1336,9 +1465,9 @@ static void RunAimbot()
 
     // silent bow aim: instant snap while a bow-type tool is equipped
     bool bowMode = g_cfg.silentBow && LocalToolIsBow();
-    float smooth = bowMode ? 1.f :
-        ((g_cfg.aimbotSmoothing && g_cfg.aimbotSmoothStyle == 1) ? g_cfg.aimbotSmooth : 1.f);
-    AimMove((tx - cx) * smooth, (ty - cy) * smooth);
+    float sx = bowMode ? 1.f : (g_cfg.aimbotSmoothing ? g_cfg.aimbotSmoothX : 1.f);
+    float sy = bowMode ? 1.f : (g_cfg.aimbotSmoothing ? g_cfg.aimbotSmoothY : 1.f);
+    AimMove((tx - cx) * sx, (ty - cy) * sy);
 }
 
 static void RunTriggerbot()
@@ -1521,9 +1650,15 @@ static void RunHitfix()
     bool want = g_cfg.hitfixEnabled && g_mem.IsAttached() && GameFocused();
     if (!want) { g_hitfixHrp = 0; g_hitfixRefresh = 0; return; }
     if (LocalToolIsBow()) return; // don't plant your feet while drawing a bow
-    if (!(GetAsyncKeyState(VK_LBUTTON) & 0x8000)) return; // only while swinging
 
     DWORD now = GetTickCount();
+    // active while LMB is held OR within 200ms of any click (manual or
+    // injected by killaura/triggerbot) - the game's hitreg window is
+    // ~150ms after the swing so keep the character settled through it
+    bool swinging = (GetAsyncKeyState(VK_LBUTTON) & 0x8000) ||
+                    (now - g_lastSwingAt < 200);
+    if (!swinging) return;
+
     auto& w = sdk::Get();
     if (!w.localPlayer) return;
 
@@ -1546,9 +1681,14 @@ static void RunHitfix()
     }
     if (!g_hitfixPrim) return;
 
+    // kill both linear drift and spin - a rotating HRP during the swing
+    // window is one of the things that makes hits whiff at odd angles
     Vec3 vel = g_mem.Read<Vec3>(g_hitfixPrim + OFF("Primitive", "AssemblyLinearVelocity"));
     if (vel.x != 0.f || vel.z != 0.f)
         g_mem.Write<Vec3>(g_hitfixPrim + OFF("Primitive", "AssemblyLinearVelocity"), { 0.f, vel.y, 0.f });
+    Vec3 ang = g_mem.Read<Vec3>(g_hitfixPrim + OFF("Primitive", "AssemblyAngularVelocity"));
+    if (ang.x != 0.f || ang.y != 0.f || ang.z != 0.f)
+        g_mem.Write<Vec3>(g_hitfixPrim + OFF("Primitive", "AssemblyAngularVelocity"), { 0.f, 0.f, 0.f });
 }
 
 // ---------------- reach lunge ----------------
@@ -1897,22 +2037,33 @@ static void ApplyTheme()
 static void MenuAim()
 {
     ImGui::Checkbox("Enabled", &g_cfg.aimbotEnabled);
-    ImGui::SliderFloat("ANGLE", &g_cfg.aimbotFov, 10.f, 360.f, "%.0f px");
-    float sm = g_cfg.aimbotSmooth * 10.f;
-    if (ImGui::SliderFloat("Smoothness", &sm, 1.f, 10.f, "%.0f"))
-        g_cfg.aimbotSmooth = sm / 10.f;
-    const char* styles[] = { "None", "Linear" };
-    ImGui::Combo("Smoothing style", &g_cfg.aimbotSmoothStyle, styles, 2);
+    ImGui::Checkbox("Use FOV", &g_cfg.aimbotUseFov);
+    if (g_cfg.aimbotUseFov)
+        ImGui::SliderFloat("FOV size", &g_cfg.aimbotFov, 10.f, 360.f, "%.0f px");
+    ImGui::Checkbox("Draw FOV", &g_cfg.aimbotDrawFov);
+    if (g_cfg.aimbotDrawFov)
+    {
+        const char* fcols[] = { "White", "Black" };
+        ImGui::Combo("FOV color", &g_cfg.aimbotFovColor, fcols, 2);
+    }
     ImGui::Checkbox("Enable smoothing", &g_cfg.aimbotSmoothing);
+    if (g_cfg.aimbotSmoothing)
+    {
+        ImGui::SliderFloat("Smoothing X", &g_cfg.aimbotSmoothX, 0.f, 1.f, "%.2f");
+        ImGui::SliderFloat("Smoothing Y", &g_cfg.aimbotSmoothY, 0.f, 1.f, "%.2f");
+    }
     ImGui::Checkbox("Enable shake", &g_cfg.aimbotShake);
     if (g_cfg.aimbotShake)
-        ImGui::SliderFloat("Shake px", &g_cfg.aimbotShakePx, 1.f, 20.f, "%.0f");
+    {
+        ImGui::SliderFloat("Shake X", &g_cfg.aimbotShakeX, 0.f, 20.f, "%.0f px");
+        ImGui::SliderFloat("Shake Y", &g_cfg.aimbotShakeY, 0.f, 20.f, "%.0f px");
+    }
     ImGui::Checkbox("Enable prediction", &g_cfg.aimbotPrediction);
     if (g_cfg.aimbotPrediction)
         ImGui::SliderFloat("Prediction (ms)", &g_cfg.aimbotPredMs, 0.f, 500.f, "%.0f");
-    const char* sorts[] = { "Crosshair", "Nearest", "Lowest HP" };
-    ImGui::Combo("Target", &g_cfg.aimbotSort, sorts, 3);
-    ImGui::Checkbox("BedWars only", &g_cfg.bedwarsOnly);
+    const char* sorts[] = { "Crosshair", "Nearest", "Lowest HP", "None" };
+    ImGui::Combo("Priority", &g_cfg.aimbotSort, sorts, 4);
+    ImGui::Checkbox("BedWars check", &g_cfg.bedwarsOnly);
     if (g_cfg.bedwarsOnly)
         ImGui::TextDisabled("Gates aim, triggerbot, killaura and silent bow");
     ImGui::SliderFloat("Range (studs)", &g_cfg.aimbotRange, 5.f, 150.f, "%.0f");
@@ -1927,6 +2078,7 @@ static void MenuAim()
     ImGui::Text("Checks");
     ImGui::Checkbox("Team check", &g_cfg.aimbotTeamCheck);
     ImGui::Checkbox("Knock check", &g_cfg.aimbotKnockCheck);
+    ImGui::Checkbox("Wall check", &g_cfg.aimbotWallCheck);
     ImGui::Checkbox("Health check", &g_cfg.aimbotHealthCheck);
     ImGui::Checkbox("Range check", &g_cfg.aimbotRangeCheck);
 }
@@ -1949,7 +2101,7 @@ static void MenuHitbox()
     ImGui::Separator();
     ImGui::Text("Hit Fix");
     ImGui::Checkbox("Enabled##hitfix", &g_cfg.hitfixEnabled);
-    ImGui::TextDisabled("Plants you while swinging for consistent hitreg");
+    ImGui::TextDisabled("Zeroes velocity through the swing window (manual + killaura clicks)");
     ImGui::Separator();
     ImGui::Text("Killaura");
     ImGui::Checkbox("Enabled##ka", &g_cfg.killauraEnabled);
@@ -2405,6 +2557,12 @@ void Overlay::Run()
             bg->AddText({ 12.f, 12.f }, IM_COL32(120, 220, 255, 220), "HITBOX");
         if (g_cfg.reachEnabled && g_lunge.prim)
             bg->AddText({ 12.f, 30.f }, IM_COL32(120, 220, 255, 220), "REACH");
+        if (g_cfg.aimbotEnabled && g_cfg.aimbotDrawFov && g_cfg.aimbotUseFov)
+        {
+            ImU32 fc = g_cfg.aimbotFovColor
+                ? IM_COL32(0, 0, 0, 220) : IM_COL32(255, 255, 255, 220);
+            bg->AddCircle({ g_localX, g_localY }, g_cfg.aimbotFov, fc, 64, 1.5f);
+        }
         if (g_cfg.menuVisible) DrawMenu();
 
         ImGui::Render();
