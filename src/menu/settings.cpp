@@ -84,7 +84,9 @@ void config::Load(const char* path)
     g_cfg.uiScale = toFloat(get("ui_scale", "1"), 1.f);
     if (g_cfg.uiScale < 0.6f) g_cfg.uiScale = 0.6f;
     if (g_cfg.uiScale > 1.6f) g_cfg.uiScale = 1.6f;
-    g_cfg.fpsCap = clampi(toInt(get("fps_cap", "0"), 0), 0, 500);
+    g_cfg.aimbotSpeed = toFloat(get("aimbot_speed", "1"), 1.f);
+    if (g_cfg.aimbotSpeed < 0.1f) g_cfg.aimbotSpeed = 0.1f;
+    if (g_cfg.aimbotSpeed > 3.f) g_cfg.aimbotSpeed = 3.f;
     g_cfg.accent[0] = toFloat(get("accent_r", "0.55"), 0.55f);
     g_cfg.accent[1] = toFloat(get("accent_g", "0.30"), 0.30f);
     g_cfg.accent[2] = toFloat(get("accent_b", "0.95"), 0.95f);
@@ -144,7 +146,7 @@ void config::Save(const char* path)
     f << "ui_theme=" << g_cfg.uiTheme << "\n";
     f << "ui_layout=" << g_cfg.uiLayout << "\n";
     f << "ui_scale=" << g_cfg.uiScale << "\n";
-    f << "fps_cap=" << g_cfg.fpsCap << "\n";
+    f << "aimbot_speed=" << g_cfg.aimbotSpeed << "\n";
     f << "accent_r=" << g_cfg.accent[0] << "\n";
     f << "accent_g=" << g_cfg.accent[1] << "\n";
     f << "accent_b=" << g_cfg.accent[2] << "\n";

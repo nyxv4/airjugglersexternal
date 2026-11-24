@@ -82,12 +82,12 @@ struct Settings
     int uiLayout = 1;           // sidebar is the only layout now
     float accent[3] = { 0.55f, 0.30f, 0.95f }; // nyx purple
     float uiScale = 1.f;        // imgui font/global scale
-    int fpsCap = 0;             // 0=uncapped, else fps limit
+    float aimbotSpeed = 1.f;    // mouse movement multiplier 0.1-3.0
 };
 
 extern Settings g_cfg;
 
-inline const char* NYX_VERSION = "40";
+inline const char* NYX_VERSION = "41";
 
 namespace config
 {

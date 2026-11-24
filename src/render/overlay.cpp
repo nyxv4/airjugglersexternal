@@ -1428,13 +1428,6 @@ static void RunAimbot()
         if (!sdk::WorldToScreen(aimWorld, hs) || hs.x == -1) continue;
         float px = hs.x, py = hs.y;
 
-        // shake: independent horizontal/vertical jitter on the aim point
-        if (g_cfg.aimbotShake)
-        {
-            px += ((rand() % 200) - 100) / 100.f * g_cfg.aimbotShakeX;
-            py += ((rand() % 200) - 100) / 100.f * g_cfg.aimbotShakeY;
-        }
-
         float dx = px - cx, dy = py - cy;
         float d = sqrtf(dx * dx + dy * dy);
         if (g_cfg.aimbotUseFov && d >= g_cfg.aimbotFov) continue;
@@ -1457,7 +1450,18 @@ static void RunAimbot()
 
     float sx = g_cfg.aimbotSmoothing ? g_cfg.aimbotSmoothX : 1.f;
     float sy = g_cfg.aimbotSmoothing ? g_cfg.aimbotSmoothY : 1.f;
-    AimMove((tx - cx) * sx, (ty - cy) * sy);
+    float mx = (tx - cx) * sx;
+    float my = (ty - cy) * sy;
+    // shake jitters the actual mouse movement, not the aim point - the old
+    // version jittered the target coords so smoothing ate most of it
+    if (g_cfg.aimbotShake)
+    {
+        mx += ((rand() % 200) - 100) / 100.f * g_cfg.aimbotShakeX;
+        my += ((rand() % 200) - 100) / 100.f * g_cfg.aimbotShakeY;
+    }
+    mx *= g_cfg.aimbotSpeed;
+    my *= g_cfg.aimbotSpeed;
+    AimMove(mx, my);
 }
 
 // hitbox: cached primitive addrs + original sizes; we always write
@@ -2029,6 +2033,7 @@ static void MenuAim()
         ImGui::SliderFloat("Shake X", &g_cfg.aimbotShakeX, 0.f, 20.f, "%.0f px");
         ImGui::SliderFloat("Shake Y", &g_cfg.aimbotShakeY, 0.f, 20.f, "%.0f px");
     }
+    ImGui::SliderFloat("Aim speed", &g_cfg.aimbotSpeed, 0.1f, 3.f, "%.1fx");
     ImGui::Checkbox("Enable prediction", &g_cfg.aimbotPrediction);
     if (g_cfg.aimbotPrediction)
         ImGui::SliderFloat("Prediction (ms)", &g_cfg.aimbotPredMs, 0.f, 500.f, "%.0f");
@@ -2208,11 +2213,6 @@ static void MenuSettings()
     const char* themes[] = { "Midnight", "Incognito", "Neon", "Light", "Vape", "NYX" };
     if (ImGui::Combo("Theme", &g_cfg.uiTheme, themes, 6)) config::Save();
     ImGui::ColorEdit3("Accent", g_cfg.accent, ImGuiColorEditFlags_NoInputs);
-    const char* fpsopts[] = { "Uncapped", "60", "120", "144", "165", "240" };
-    static const int fpsvals[] = { 0, 60, 120, 144, 165, 240 };
-    int fpsIdx = 0;
-    for (int i = 0; i < 6; i++) if (fpsvals[i] == g_cfg.fpsCap) { fpsIdx = i; break; }
-    if (ImGui::Combo("FPS cap", &fpsIdx, fpsopts, 6)) { g_cfg.fpsCap = fpsvals[fpsIdx]; config::Save(); }
     CardEnd();
     CardBegin("##s_reset", "Reset");
     ImGui::TextDisabled("Restore every setting to defaults");
@@ -2647,17 +2647,7 @@ void Overlay::Run()
         ctx->ClearRenderTargetView(rtv, clear);
         ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
         swapChain->Present(0, 0);
-
-        // frame cap: user setting (0 = uncapped, min ~1000fps floor of 1ms)
-        {
-            static auto lastFrame = std::chrono::steady_clock::now();
-            auto nowT = std::chrono::steady_clock::now();
-            int budgetMs = g_cfg.fpsCap > 0 ? 1000 / g_cfg.fpsCap : 8;
-            if (budgetMs < 1) budgetMs = 1;
-            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(nowT - lastFrame).count();
-            if (elapsed < budgetMs) Sleep((DWORD)(budgetMs - elapsed));
-            lastFrame = std::chrono::steady_clock::now();
-        }
+        Sleep(1); // yield - keeps uncapped fps without pegging a core
 
         // idle throttle: nothing to draw and menu closed -> don't burn a core
         if (!focused && !g_cfg.menuVisible && !g_mem.IsAttached()) Sleep(8);
