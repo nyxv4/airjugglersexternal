@@ -178,6 +178,10 @@ struct CachedPlayer
     std::string kit;
     ImU32 kitCol = 0;
     DWORD refreshAt = 0;
+    // attribute scans are expensive (dozens of RPM reads per player) -
+    // throttle to ~4s, rescan immediately on respawn (character change)
+    uintptr_t attrChar = 0;
+    DWORD attrScanAt = 0;
 };
 static std::unordered_map<uintptr_t, CachedPlayer> g_cache;
 
@@ -231,33 +235,40 @@ static void RefreshPlayer(CachedPlayer& cp, const Instance& p)
     }
 
     // replicated attributes - bedwars stores kit in PlayingAsKits etc.
-    // (readable externally since attributes replicate to the client)
-    if (cp.kit.empty())
+    // (readable externally since attributes replicate to the client).
+    // throttled: only rescan every ~4s, or right after a respawn
     {
-        static std::unordered_set<uintptr_t> attrLogged, attrDbgDone;
-        bool logThis = !attrLogged.count(p.addr);
-        bool dbg = logThis && !attrDbgDone.count(p.addr);
-        if (dbg) attrDbgDone.insert(p.addr);
-        std::string attrDump;
-        auto scanAttrs = [&](const Instance& inst, const char* tag) {
-            for (auto& [k, v] : inst.GetAttributes(dbg))
-            {
-                std::string lk = ToLower(k);
-                if (lk.find("kit") != std::string::npos || lk.find("class") != std::string::npos)
-                    tryKit(v);
-                if (logThis && attrDump.size() < 400)
-                {
-                    attrDump += tag; attrDump += ":"; attrDump += k;
-                    attrDump += "="; attrDump += v; attrDump += " ";
-                }
-            }
-        };
-        scanAttrs(p, "p");
-        if (cp.kit.empty() && ch.valid()) scanAttrs(ch, "c");
-        if (logThis && !attrDump.empty())
+        DWORD now = GetTickCount();
+        bool charChanged = (cp.attrChar != cp.character);
+        if ((cp.kit.empty() && now >= cp.attrScanAt) || charChanged)
         {
-            attrLogged.insert(p.addr);
-            Log("attrs p='%s' %s", cp.name.c_str(), attrDump.c_str());
+            cp.attrChar = cp.character;
+            cp.attrScanAt = now + 4000;
+            static std::unordered_set<uintptr_t> attrLogged, attrDbgDone;
+            bool logThis = !attrLogged.count(p.addr);
+            bool dbg = logThis && !attrDbgDone.count(p.addr);
+            if (dbg) attrDbgDone.insert(p.addr);
+            std::string attrDump;
+            auto scanAttrs = [&](const Instance& inst, const char* tag) {
+                for (auto& [k, v] : inst.GetAttributes(dbg))
+                {
+                    std::string lk = ToLower(k);
+                    if (lk.find("kit") != std::string::npos || lk.find("class") != std::string::npos)
+                        tryKit(v);
+                    if (logThis && attrDump.size() < 400)
+                    {
+                        attrDump += tag; attrDump += ":"; attrDump += k;
+                        attrDump += "="; attrDump += v; attrDump += " ";
+                    }
+                }
+            };
+            scanAttrs(p, "p");
+            if (cp.kit.empty() && ch.valid()) scanAttrs(ch, "c");
+            if (logThis && !attrDump.empty())
+            {
+                attrLogged.insert(p.addr);
+                Log("attrs p='%s' %s", cp.name.c_str(), attrDump.c_str());
+            }
         }
     }
     cp.name = p.GetName();
@@ -661,6 +672,8 @@ static const char* VkName(int vk)
 
 // ---------------- aimbot / triggerbot / hitbox ----------------
 
+static bool LocalToolIsBow();
+
 static void RunAimbot()
 {
     if (!g_cfg.aimbotEnabled || !g_mem.IsAttached()) return;
@@ -710,7 +723,10 @@ static void RunAimbot()
     }
     g_aimbotHadTarget = true;
 
-    float smooth = (g_cfg.aimbotSmoothing && g_cfg.aimbotSmoothStyle == 1) ? g_cfg.aimbotSmooth : 1.f;
+    // silent bow aim: instant snap while a bow-type tool is equipped
+    bool bowMode = LocalToolIsBow();
+    float smooth = bowMode ? 1.f :
+        ((g_cfg.aimbotSmoothing && g_cfg.aimbotSmoothStyle == 1) ? g_cfg.aimbotSmooth : 1.f);
     float dx = (tx - cx) * smooth;
     float dy = (ty - cy) * smooth;
     mouse_move((int)dx, (int)dy);
@@ -720,7 +736,9 @@ static void RunTriggerbot()
 {
     if (!g_cfg.triggerbotEnabled || !g_mem.IsAttached()) return;
     static bool toggled = false, wasDown = false;
-    if (!ActKey(g_cfg.triggerKey, g_cfg.triggerMode, toggled, wasDown)) return;
+    // silent bow: auto-fires while a bow is equipped, no key needed
+    if (!(LocalToolIsBow() && g_cfg.silentBow) &&
+        !ActKey(g_cfg.triggerKey, g_cfg.triggerMode, toggled, wasDown)) return;
 
     for (auto& p : g_players)
     {
@@ -834,74 +852,34 @@ static void RunHitbox()
     }
 }
 
-// ---------------- reach (tool handle resize, like nyx1 script) ----------------
+// ---------------- equipped tool detection (silent bow aim) ----------------
 
-struct ReachState
+static std::string g_localTool;
+static DWORD g_toolRefresh = 0;
+
+static bool LocalToolIsBow()
 {
-    uintptr_t handle = 0, prim = 0;
-    Vec3 origSize{};
-    bool origMassless = false, applied = false;
-    DWORD refreshAt = 0;
-};
-static ReachState g_reach;
-
-static void RestoreReach()
-{
-    if (!g_reach.applied) return;
-    if (g_reach.prim)
-    {
-        g_mem.Write<Vec3>(g_reach.prim + OFF("Primitive", "Size"), g_reach.origSize);
-        g_mem.Write<uint8_t>(g_reach.handle + OFF("BasePart", "Massless"), g_reach.origMassless ? 1 : 0);
-    }
-    g_reach.applied = false;
-}
-
-static void RunReach()
-{
-    bool want = g_cfg.reachEnabled && g_mem.IsAttached() && GameFocused();
-    if (!want) { RestoreReach(); g_reach.refreshAt = 0; return; }
-
+    if (!g_cfg.silentBow || !g_mem.IsAttached()) { g_localTool.clear(); return false; }
     DWORD now = GetTickCount();
-    auto& w = sdk::Get();
-    if (!w.localPlayer) { RestoreReach(); return; }
-
-    // re-resolve the equipped tool's Handle ~2hz
-    if (now >= g_reach.refreshAt || !g_reach.handle)
+    if (now >= g_toolRefresh)
     {
-        g_reach.refreshAt = now + 500;
-        uintptr_t charAddr = g_mem.ReadPtr(w.localPlayer + OFF("Player", "ModelInstance"));
-        g_reach.handle = 0;
-        if (charAddr)
+        g_toolRefresh = now + 500;
+        g_localTool.clear();
+        auto& w = sdk::Get();
+        if (w.localPlayer)
         {
-            Instance ch(charAddr);
-            for (auto& c : ch.GetChildren())
+            uintptr_t charAddr = g_mem.ReadPtr(w.localPlayer + OFF("Player", "ModelInstance"));
+            if (charAddr)
             {
-                if (c.GetClassName() != "Tool") continue;
-                for (auto& t : c.GetChildren())
-                    if (t.GetName() == "Handle") { g_reach.handle = t.addr; break; }
-                if (g_reach.handle) break;
+                for (auto& c : Instance(charAddr).GetChildren())
+                    if (c.GetClassName() == "Tool") { g_localTool = ToLower(c.GetName()); break; }
             }
         }
-        if (g_reach.handle != 0)
-        {
-            g_reach.prim = g_mem.ReadPtr(g_reach.handle + OFF("BasePart", "Primitive"));
-            if (g_reach.prim)
-            {
-                g_reach.origSize = g_mem.Read<Vec3>(g_reach.prim + OFF("Primitive", "Size"));
-                g_reach.origMassless = g_mem.Read<uint8_t>(g_reach.handle + OFF("BasePart", "Massless")) != 0;
-            }
-            else g_reach.handle = 0;
-        }
-        else RestoreReach();
     }
-    if (!g_reach.handle || !g_reach.prim) return;
-
-    Vec3 want_{ g_reach.origSize.x, g_reach.origSize.y, g_reach.origSize.z + g_cfg.reachStuds };
-    Vec3 cur = g_mem.Read<Vec3>(g_reach.prim + OFF("Primitive", "Size"));
-    if (cur.x != want_.x || cur.y != want_.y || cur.z != want_.z)
-        g_mem.Write<Vec3>(g_reach.prim + OFF("Primitive", "Size"), want_);
-    g_mem.Write<uint8_t>(g_reach.handle + OFF("BasePart", "Massless"), 1);
-    g_reach.applied = true;
+    return g_localTool.find("bow") != std::string::npos ||
+           g_localTool.find("crossbow") != std::string::npos ||
+           g_localTool.find("slingshot") != std::string::npos ||
+           g_localTool.find("musket") != std::string::npos;
 }
 
 // ---------------- hit fix ----------------
@@ -955,6 +933,8 @@ static void RunHitfix()
 static void RunKillaura()
 {
     if (!g_cfg.killauraEnabled || !g_mem.IsAttached()) return;
+    static bool toggled = false, wasDown = false;
+    if (!ActKey(g_cfg.kaKey, g_cfg.kaMode, toggled, wasDown)) return;
     if (g_cfg.kaRequireMouse && !(GetAsyncKeyState(VK_LBUTTON) & 0x8000)) return;
     if (g_localKnocked) return;
     if (g_players.empty() || !g_localHrpAddr) return;
@@ -1200,7 +1180,10 @@ static void MenuAim()
         ImGui::SliderFloat("Prediction (ms)", &g_cfg.aimbotPredMs, 0.f, 500.f, "%.0f");
     ImGui::SliderFloat("Range (studs)", &g_cfg.aimbotRange, 5.f, 150.f, "%.0f");
     ImGui::Combo("Activation", &g_cfg.aimbotMode, kActModes, 3);
-    ImGui::TextDisabled("%s: %s", kActModes[g_cfg.aimbotMode], VkName(g_cfg.aimbotKey));
+    RebindButton("Key", &g_cfg.aimbotKey);
+    ImGui::Checkbox("Silent aim (bow)", &g_cfg.silentBow);
+    if (g_cfg.silentBow)
+        ImGui::TextDisabled("Instant snap + auto-shoot while bow/crossbow/slingshot equipped");
     ImGui::Separator();
     ImGui::Text("Checks");
     ImGui::Checkbox("Team check", &g_cfg.aimbotTeamCheck);
@@ -1214,7 +1197,7 @@ static void MenuTrigger()
     ImGui::Checkbox("Enabled", &g_cfg.triggerbotEnabled);
     ImGui::SliderFloat("FOV", &g_cfg.triggerFov, 5.f, 150.f, "%.0f px");
     ImGui::Combo("Activation", &g_cfg.triggerMode, kActModes, 3);
-    ImGui::TextDisabled("%s: %s", kActModes[g_cfg.triggerMode], VkName(g_cfg.triggerKey));
+    RebindButton("Key", &g_cfg.triggerKey);
 }
 
 static void MenuHitbox()
@@ -1223,15 +1206,24 @@ static void MenuHitbox()
     ImGui::SliderFloat("Multiplier", &g_cfg.hitboxMult, 1.f, 6.f, "%.1fx");
     ImGui::SliderFloat("Max studs (0=off)", &g_cfg.hitboxMaxStuds, 0.f, 30.f, "%.1f");
     ImGui::Combo("Activation", &g_cfg.hitboxMode, kActModes, 3);
-    ImGui::TextDisabled("%s: %s", kActModes[g_cfg.hitboxMode], VkName(g_cfg.hitboxKey));
-    ImGui::Separator();
-    ImGui::Text("Reach");
-    ImGui::Checkbox("Enabled##reach", &g_cfg.reachEnabled);
-    ImGui::SliderFloat("Range (studs)", &g_cfg.reachStuds, 0.f, 18.f, "%.1f");
+    RebindButton("Key", &g_cfg.hitboxKey);
     ImGui::Separator();
     ImGui::Text("Hit Fix");
     ImGui::Checkbox("Enabled##hitfix", &g_cfg.hitfixEnabled);
     ImGui::TextDisabled("Plants you while swinging for consistent hitreg");
+    ImGui::Separator();
+    ImGui::Text("Killaura");
+    ImGui::Checkbox("Enabled##ka", &g_cfg.killauraEnabled);
+    ImGui::SliderFloat("CPS", &g_cfg.kaCps, 1.f, 40.f, "%.0f");
+    ImGui::SliderFloat("Swing range (studs)", &g_cfg.kaSwingRange, 1.f, 30.f, "%.0f");
+    ImGui::SliderFloat("Attack range (studs)", &g_cfg.kaAttackRange, 1.f, 30.f, "%.0f");
+    ImGui::SliderFloat("Max angle", &g_cfg.kaAngle, 1.f, 360.f, "%.0f");
+    ImGui::SliderFloat("Aim smooth", &g_cfg.kaSmooth, 0.05f, 1.f, "%.2f");
+    ImGui::Combo("Activation##ka", &g_cfg.kaMode, kActModes, 3);
+    RebindButton("Key##ka", &g_cfg.kaKey);
+    ImGui::Checkbox("Require mouse down##ka", &g_cfg.kaRequireMouse);
+    ImGui::Checkbox("Team check##ka", &g_cfg.kaTeamCheck);
+    ImGui::TextDisabled("Auto-aims and clicks at targets in range/angle");
 }
 
 static void MenuVisuals()
@@ -1244,19 +1236,6 @@ static void MenuVisuals()
     ImGui::Checkbox("Team check", &g_cfg.espTeamCheck);
     ImGui::Checkbox("Show teammates", &g_cfg.espShowTeammates);
     ImGui::Checkbox("Kit ESP", &g_cfg.espKit);
-}
-
-static void MenuKillaura()
-{
-    ImGui::Checkbox("Enabled", &g_cfg.killauraEnabled);
-    ImGui::SliderFloat("CPS", &g_cfg.kaCps, 1.f, 40.f, "%.0f");
-    ImGui::SliderFloat("Swing range (studs)", &g_cfg.kaSwingRange, 1.f, 30.f, "%.0f");
-    ImGui::SliderFloat("Attack range (studs)", &g_cfg.kaAttackRange, 1.f, 30.f, "%.0f");
-    ImGui::SliderFloat("Max angle", &g_cfg.kaAngle, 1.f, 360.f, "%.0f");
-    ImGui::SliderFloat("Aim smooth", &g_cfg.kaSmooth, 0.05f, 1.f, "%.2f");
-    ImGui::Checkbox("Require mouse down", &g_cfg.kaRequireMouse);
-    ImGui::Checkbox("Team check", &g_cfg.kaTeamCheck);
-    ImGui::TextDisabled("Auto-aims and clicks at targets in range/angle");
 }
 
 static void MenuMisc()
@@ -1272,9 +1251,7 @@ static void MenuMisc()
     ImGui::ColorEdit3("Accent", g_cfg.accent, ImGuiColorEditFlags_NoInputs);
     ImGui::Text("Keybinds");
     RebindButton("Menu", &g_cfg.menuKey);
-    RebindButton("Aimbot", &g_cfg.aimbotKey);
-    RebindButton("Triggerbot", &g_cfg.triggerKey);
-    RebindButton("Hitbox", &g_cfg.hitboxKey);
+    ImGui::TextDisabled("Feature keys are rebound inside each tab");
     ImGui::TextDisabled("INSERT still toggles this menu");
     ImGui::Text("Roblox PID: %lu", g_mem.pid);
     ImGui::Text("Base: 0x%llx", (unsigned long long)g_mem.base);
@@ -1332,8 +1309,8 @@ static void DrawMenu()
         ImGui::TextDisabled("v%s", NYX_VERSION);
         ImGui::Separator();
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
-        const char* names[] = { "AIM ASSIST", "TRIGGERBOT", "HITBOX", "KILLAURA", "VISUALS", "MISC" };
-        for (int i = 0; i < 6; i++)
+        const char* names[] = { "AIM ASSIST", "TRIGGERBOT", "HITBOX", "VISUALS", "MISC" };
+        for (int i = 0; i < 5; i++)
         {
             if (section == i)
                 ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_CheckMark]);
@@ -1349,9 +1326,8 @@ static void DrawMenu()
         case 0: MenuAim(); break;
         case 1: MenuTrigger(); break;
         case 2: MenuHitbox(); break;
-        case 3: MenuKillaura(); break;
-        case 4: MenuVisuals(); break;
-        case 5: MenuMisc(); break;
+        case 3: MenuVisuals(); break;
+        case 4: MenuMisc(); break;
         }
         ImGui::EndChild();
     }
@@ -1363,7 +1339,6 @@ static void DrawMenu()
             if (ImGui::BeginTabItem("Aim Assist")) { MenuAim(); ImGui::EndTabItem(); }
             if (ImGui::BeginTabItem("Triggerbot")) { MenuTrigger(); ImGui::EndTabItem(); }
             if (ImGui::BeginTabItem("Hitbox")) { MenuHitbox(); ImGui::EndTabItem(); }
-            if (ImGui::BeginTabItem("Killaura")) { MenuKillaura(); ImGui::EndTabItem(); }
             if (ImGui::BeginTabItem("Visuals")) { MenuVisuals(); ImGui::EndTabItem(); }
             if (ImGui::BeginTabItem("Misc")) { MenuMisc(); ImGui::EndTabItem(); }
             ImGui::EndTabBar();
@@ -1574,7 +1549,6 @@ void Overlay::Run()
             RunAimbot();
             RunTriggerbot();
             RunHitbox();
-            RunReach();
             RunHitfix();
             RunKillaura();
         }
@@ -1608,7 +1582,6 @@ void Overlay::Run()
     }
 
     RestoreHitboxes();
-    RestoreReach();
     g_mem.Detach();
 }
 

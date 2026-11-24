@@ -46,16 +46,19 @@ struct Settings
     float hitboxMult = 2.5f;
     float hitboxMaxStuds = 0.f;  // 0 = uncapped (14.4 for bedwars)
 
-    // reach (tool handle resize)
-    bool reachEnabled = false;
-    float reachStuds = 6.f;      // +6 studs over normal (~10.5 total)
-
     // hit fix: plants your character while swinging so hits register
     // consistently regardless of ping/fps
     bool hitfixEnabled = false;
 
+    // silent aim for bows: snaps instantly + auto-shoots while a
+    // bow/crossbow/slingshot is equipped (closest external equivalent -
+    // true silent aim needs code inside the game)
+    bool silentBow = false;
+
     // killaura (auto-aim + click at CPS within range/angle)
     bool killauraEnabled = false;
+    int kaKey = 0x56;             // V
+    int kaMode = 1;               // 0=hold 1=toggle 2=always
     float kaCps = 20.f;          // attacks per second (slider to 40)
     float kaSwingRange = 18.f;   // target acquisition range (studs)
     float kaAttackRange = 18.f;  // click range (studs)
@@ -77,7 +80,7 @@ struct Settings
 
 extern Settings g_cfg;
 
-inline const char* NYX_VERSION = "23";
+inline const char* NYX_VERSION = "24";
 
 namespace config
 {

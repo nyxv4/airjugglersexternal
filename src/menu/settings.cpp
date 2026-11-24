@@ -65,10 +65,11 @@ void config::Load(const char* path)
     g_cfg.hitboxMode = clampi(toInt(get("hitbox_mode", "2"), 2), 0, 2);
     g_cfg.hitboxMult = toFloat(get("hitbox_mult", "2.5"), 2.5f);
     g_cfg.hitboxMaxStuds = toFloat(get("hitbox_max", "0"), 0.f);
-    g_cfg.reachEnabled = get("reach_enabled", "0") == "1";
-    g_cfg.reachStuds = toFloat(get("reach_studs", "6.5"), 6.5f);
     g_cfg.hitfixEnabled = get("hitfix_enabled", "0") == "1";
+    g_cfg.silentBow = get("silent_bow", "0") == "1";
     g_cfg.killauraEnabled = get("killaura_enabled", "0") == "1";
+    g_cfg.kaKey = toInt(get("ka_key", "86"), 86);
+    g_cfg.kaMode = clampi(toInt(get("ka_mode", "1"), 1), 0, 2);
     g_cfg.kaCps = toFloat(get("ka_cps", "12"), 12.f);
     g_cfg.kaSwingRange = toFloat(get("ka_swing", "18"), 18.f);
     g_cfg.kaAttackRange = toFloat(get("ka_attack", "18"), 18.f);
@@ -121,10 +122,11 @@ void config::Save(const char* path)
     f << "hitbox_mode=" << g_cfg.hitboxMode << "\n";
     f << "hitbox_mult=" << g_cfg.hitboxMult << "\n";
     f << "hitbox_max=" << g_cfg.hitboxMaxStuds << "\n";
-    f << "reach_enabled=" << g_cfg.reachEnabled << "\n";
-    f << "reach_studs=" << g_cfg.reachStuds << "\n";
     f << "hitfix_enabled=" << g_cfg.hitfixEnabled << "\n";
+    f << "silent_bow=" << g_cfg.silentBow << "\n";
     f << "killaura_enabled=" << g_cfg.killauraEnabled << "\n";
+    f << "ka_key=" << g_cfg.kaKey << "\n";
+    f << "ka_mode=" << g_cfg.kaMode << "\n";
     f << "ka_cps=" << g_cfg.kaCps << "\n";
     f << "ka_swing=" << g_cfg.kaSwingRange << "\n";
     f << "ka_attack=" << g_cfg.kaAttackRange << "\n";
