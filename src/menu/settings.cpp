@@ -39,6 +39,7 @@ void config::Load(const char* path)
     g_cfg.espTeamCheck = get("esp_teamcheck", "1") == "1";
     g_cfg.espShowTeammates = get("esp_teammates", "0") == "1";
     g_cfg.espKit = get("esp_kit", "1") == "1";
+    g_cfg.espVisCheck = get("esp_vischeck", "0") == "1";
     g_cfg.objEsp = get("obj_esp", "1") == "1";
     g_cfg.objEspDist = toFloat(get("obj_esp_dist", "250"), 250.f);
     if (g_cfg.objEspDist < 25.f) g_cfg.objEspDist = 25.f;
@@ -60,6 +61,7 @@ void config::Load(const char* path)
     g_cfg.aimbotSmoothing = get("aimbot_smoothing", "1") == "1";
     g_cfg.aimbotUseFov = get("aimbot_usefov", "1") == "1";
     g_cfg.aimbotDrawFov = get("aimbot_drawfov", "0") == "1";
+    g_cfg.aimbotRaycast = get("aimbot_raycast", "0") == "1";
     g_cfg.aimbotFovColor = clampi(toInt(get("aimbot_fovcolor", "0"), 0), 0, 1);
     g_cfg.aimbotSmoothX = toFloat(get("aimbot_smooth_x", get("aimbot_smooth", "0.25").c_str()), 0.25f);
     g_cfg.aimbotSmoothY = toFloat(get("aimbot_smooth_y", get("aimbot_smooth", "0.25").c_str()), 0.25f);
@@ -129,6 +131,7 @@ void config::Save(const char* path)
     f << "esp_teamcheck=" << g_cfg.espTeamCheck << "\n";
     f << "esp_teammates=" << g_cfg.espShowTeammates << "\n";
     f << "esp_kit=" << g_cfg.espKit << "\n";
+    f << "esp_vischeck=" << g_cfg.espVisCheck << "\n";
     f << "obj_esp=" << g_cfg.objEsp << "\n";
     f << "obj_esp_dist=" << g_cfg.objEspDist << "\n";
     f << "esp_hitbox=" << g_cfg.espHitbox << "\n";
@@ -142,6 +145,7 @@ void config::Save(const char* path)
     f << "aimbot_smoothing=" << g_cfg.aimbotSmoothing << "\n";
     f << "aimbot_usefov=" << g_cfg.aimbotUseFov << "\n";
     f << "aimbot_drawfov=" << g_cfg.aimbotDrawFov << "\n";
+    f << "aimbot_raycast=" << g_cfg.aimbotRaycast << "\n";
     f << "aimbot_fovcolor=" << g_cfg.aimbotFovColor << "\n";
     f << "aimbot_smooth_x=" << g_cfg.aimbotSmoothX << "\n";
     f << "aimbot_smooth_y=" << g_cfg.aimbotSmoothY << "\n";

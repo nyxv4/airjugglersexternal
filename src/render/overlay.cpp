@@ -368,6 +368,7 @@ static void RefreshPlayer(CachedPlayer& cp, const Instance& p)
 
 static Vec3 CachedLocalPos();
 static ImU32 HitboxEspColor();
+static bool EspRayVisible(const Vec3& eye, const Vec3& tgt);
 
 // ---------------- npc/dummy scan (bedwars bots etc.) ----------------
 // dummies are Models in Workspace, not Player instances - scan for
@@ -938,8 +939,21 @@ static void DrawEsp(ImDrawList* dl)
     ImU32 colTeam = IM_COL32(80, 200, 120, 255);
     ImU32 colEnemy = IM_COL32(255, 80, 80, 255);
 
+    // visible-only: raycast eye->chest per player, skip blocked ones.
+    // the occluder cache is kept warm by UpdateOccluders() in the loop.
+    Vec3 visEye{};
+    bool visOn = g_cfg.espVisCheck;
+    if (visOn)
+    {
+        Vec3 lp = CachedLocalPos();
+        visEye = { lp.x, lp.y + 1.5f, lp.z };
+    }
+
     for (auto& p : g_players)
     {
+        if (visOn && !EspRayVisible(visEye,
+            { p.rootWorld.x, p.rootWorld.y + 1.f, p.rootWorld.z }))
+            continue;
         ImU32 c = p.teammate ? colTeam : colEnemy;
         float cx = (p.x1 + p.x2) / 2.f;
 
@@ -1360,12 +1374,30 @@ static void WarmOccluders(int maxN)
 }
 
 // slab test: does segment eye->tgt pass through any cached part's AABB?
+// cheap reject first: the ray's own bounding box must overlap the part's
+// bounds or the ray can't possibly hit it - skips ~90% of tests
 static bool RayBlocked(const Vec3& eye, const Vec3& tgt)
 {
     Vec3 d{ tgt.x - eye.x, tgt.y - eye.y, tgt.z - eye.z };
+    float smn[3] = { eye.x < tgt.x ? eye.x : tgt.x,
+                     eye.y < tgt.y ? eye.y : tgt.y,
+                     eye.z < tgt.z ? eye.z : tgt.z };
+    float smx[3] = { eye.x > tgt.x ? eye.x : tgt.x,
+                     eye.y > tgt.y ? eye.y : tgt.y,
+                     eye.z > tgt.z ? eye.z : tgt.z };
     for (auto& [addr, o] : g_occluders)
     {
         if (!o.prim) continue;
+        // AABB overlap test between ray bounds and part bounds
+        float op3[3] = { o.pos.x, o.pos.y, o.pos.z };
+        float os3[3] = { o.size.x, o.size.y, o.size.z };
+        bool overlap = true;
+        for (int i = 0; i < 3; i++)
+        {
+            float h = os3[i] * 0.5f + 0.5f; // small margin
+            if (op3[i] + h < smn[i] || op3[i] - h > smx[i]) { overlap = false; break; }
+        }
+        if (!overlap) continue;
         float mn[3] = { o.pos.x - o.size.x / 2, o.pos.y - o.size.y / 2, o.pos.z - o.size.z / 2 };
         float mx[3] = { o.pos.x + o.size.x / 2, o.pos.y + o.size.y / 2, o.pos.z + o.size.z / 2 };
         float o3[3] = { eye.x, eye.y, eye.z }, d3[3] = { d.x, d.y, d.z };
@@ -1392,6 +1424,26 @@ static bool RayBlocked(const Vec3& eye, const Vec3& tgt)
     return false;
 }
 
+// esp visible-only helper - empty cache means "can't tell", treat as visible
+static bool EspRayVisible(const Vec3& eye, const Vec3& tgt)
+{
+    return g_occluders.empty() || !RayBlocked(eye, tgt);
+}
+
+// keeps the occluder cache fresh - rescan every ~8s, warm gradually
+static void UpdateOccluders()
+{
+    DWORD now = GetTickCount();
+    if (now >= g_occlScanAt) { g_occlScanAt = now + 8000; ScanOccluders(); }
+    WarmOccluders(120);
+}
+
+// raycast debug state - last aim target + whether the ray to it is clear
+static bool g_aimRayValid = false;
+static Vec2 g_aimRayScreen;
+static Vec3 g_aimRayWorld;
+static bool g_aimRayBlocked = false;
+
 // ---------------- aimbot / hitbox / hitfix / reach ----------------
 
 
@@ -1412,13 +1464,12 @@ static void RunAimbot()
     float bestD = 0.f;
     float tx = 0, ty = 0;
 
-    // wall check: warm the occluder cache gradually, rescan every ~8s
+    // wall/raycast checks share the occluder cache - warm it gradually,
+    // rescan every ~8s
     Vec3 eye{};
-    if (g_cfg.aimbotWallCheck)
+    if (g_cfg.aimbotWallCheck || g_cfg.aimbotRaycast)
     {
-        DWORD now = GetTickCount();
-        if (now >= g_occlScanAt) { g_occlScanAt = now + 8000; ScanOccluders(); }
-        WarmOccluders(120);
+        UpdateOccluders();
         Vec3 lp = CachedLocalPos();
         eye = { lp.x, lp.y + 1.5f, lp.z };
     }
@@ -1454,7 +1505,7 @@ static void RunAimbot()
                        (g_cfg.aimbotSort == 3) ? 0.f : d;
         if (metric < bestMetric) { bestMetric = metric; bestD = d; best = &p; tx = px; ty = py; }
     }
-    if (!best) { g_aimbotHadTarget = false; return; }
+    if (!best) { g_aimbotHadTarget = false; g_aimRayValid = false; return; }
 
     // throttled diagnostic so we can verify it acquires + moves
     static DWORD lastAimLog = 0;
@@ -1464,6 +1515,15 @@ static void RunAimbot()
         Log("[nyx] aimbot target='%s' dist=%.0fpx players=%zu", best->name.c_str(), bestD, g_players.size());
     }
     g_aimbotHadTarget = true;
+
+    // raycast debug: record the target + occlusion result for the overlay
+    if (g_cfg.aimbotRaycast)
+    {
+        g_aimRayValid = true;
+        g_aimRayScreen = { tx, ty };
+        g_aimRayWorld = { best->rootWorld.x, best->rootWorld.y + 1.f, best->rootWorld.z };
+        g_aimRayBlocked = !g_occluders.empty() && RayBlocked(eye, g_aimRayWorld);
+    }
 
     float sx = g_cfg.aimbotSmoothing ? g_cfg.aimbotSmoothX : 1.f;
     float sy = g_cfg.aimbotSmoothing ? g_cfg.aimbotSmoothY : 1.f;
@@ -1973,6 +2033,9 @@ static void MenuAim()
         const char* fcols[] = { "White", "Black" };
         ImGui::Combo("FOV color", &g_cfg.aimbotFovColor, fcols, 2);
     }
+    ImGui::Checkbox("Raycast debug", &g_cfg.aimbotRaycast);
+    if (g_cfg.aimbotRaycast)
+        ImGui::TextDisabled("Draws ray to target - green clear, red blocked");
     ImGui::Checkbox("Enable smoothing", &g_cfg.aimbotSmoothing);
     if (g_cfg.aimbotSmoothing)
     {
@@ -2058,6 +2121,9 @@ static void CardPlayerEsp()
     ImGui::Checkbox("Team Check", &g_cfg.espTeamCheck);
     ImGui::Checkbox("Show Teammates", &g_cfg.espShowTeammates);
     ImGui::Checkbox("Kit ESP", &g_cfg.espKit);
+    ImGui::Checkbox("Visible only", &g_cfg.espVisCheck);
+    if (g_cfg.espVisCheck)
+        ImGui::TextDisabled("Hides ESP on players behind walls (raycast)");
 }
 
 static void CardWorldEsp()
@@ -2555,6 +2621,9 @@ void Overlay::Run()
             RestoreHitboxes();
         }
 
+        if (focused && (g_cfg.aimbotWallCheck || g_cfg.aimbotRaycast || g_cfg.espVisCheck))
+            UpdateOccluders();
+
         if (focused)
         {
             RunHitbox();
@@ -2590,6 +2659,13 @@ void Overlay::Run()
             ImU32 fc = g_cfg.aimbotFovColor
                 ? IM_COL32(0, 0, 0, 220) : IM_COL32(255, 255, 255, 220);
             bg->AddCircle({ g_localX, g_localY }, g_cfg.aimbotFov, fc, 64, 1.5f);
+        }
+        // raycast debug ray: screen center -> current aim target
+        if (g_cfg.aimbotRaycast && g_aimRayValid)
+        {
+            ImU32 rc = g_aimRayBlocked ? IM_COL32(255, 70, 70, 230) : IM_COL32(80, 255, 130, 230);
+            bg->AddLine({ g_localX, g_localY }, { g_aimRayScreen.x, g_aimRayScreen.y }, rc, 2.f);
+            bg->AddCircle({ g_aimRayScreen.x, g_aimRayScreen.y }, 4.f, rc, 12, 1.5f);
         }
         if (g_cfg.menuVisible) DrawMenu();
 

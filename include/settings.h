@@ -13,6 +13,7 @@ struct Settings
     bool espTeamCheck = true;
     bool espShowTeammates = false;
     bool espKit = true;
+    bool espVisCheck = false;   // hide ESP on players behind walls (raycast)
     // kit-specific object esp (hidden metal, orbs, bees, traps...)
     bool objEsp = true;
     float objEspDist = 250.f;   // studs
@@ -29,6 +30,7 @@ struct Settings
     // vape-style: independent X/Y smoothing + shake, use/draw FOV toggles
     bool aimbotUseFov = true;
     bool aimbotDrawFov = false;
+    bool aimbotRaycast = false;  // draw ray to target, green=clear red=blocked
     int aimbotFovColor = 0;      // 0 = white, 1 = black
     float aimbotSmoothX = 0.25f; // 0..1 per-axis pull strength
     float aimbotSmoothY = 0.25f;
@@ -87,7 +89,7 @@ struct Settings
 
 extern Settings g_cfg;
 
-inline const char* NYX_VERSION = "44";
+inline const char* NYX_VERSION = "45";
 
 namespace config
 {
