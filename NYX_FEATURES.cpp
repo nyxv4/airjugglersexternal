@@ -1,14 +1,13 @@
 // ============================================================================
-// NYX FEATURE SOURCE - consolidated reference (v43 - post-audit)
+// NYX FEATURE SOURCE - consolidated reference (v44)
 // ============================================================================
-// Hitbox ESP (read-only), Aim Assist, Movement diagnostics (read-only),
-// Kit ESP. Live hitbox expansion, hitfix velocity writes and reach
-// position writes were REMOVED in v43 - no physics manipulation remains.
+// Hitbox ESP + rate-limited hitbox expander, Aim Assist, Hit Fix
+// (100ms swing window), Kit ESP. Reach position writes remain REMOVED.
 //
 // THIS FILE DOES NOT COMPILE STANDALONE. Dependencies:
 //   include/memory.h, include/sdk.h, include/offsets.h, include/settings.h
 //   ext/imgui/imgui.h, windows.h, CollectPlayers()/g_players, main loop
-//   call sites in src/render/overlay.cpp (~line 2400).
+//   call sites in src/render/overlay.cpp (~line 2550).
 // ============================================================================
 
 // ============================ SETTINGS =====================================
@@ -968,16 +967,140 @@ static void RunAimbot()
 }
 
 
-// ============================ MOVEMENT DIAGNOSTIC (read-only) ==============
-// ---------------- movement diagnostic (read-only) ----------------
-// hitfix used to zero HRP velocity during swing windows - that fought
-// sprint and made movement unstable, so all physics writes are removed.
-// what remains is a read-only velocity readout for the menu panel;
-// nothing in this section modifies the game.
+// ============================ HITBOX EXPANDER (rate-limited) ===============
+// ---------------- hitbox expander (rate-limited) ----------------
+// writes Primitive.Size on enemy HRPs so hits register easier. v44 rework:
+// writes are throttled to ~12hz per part instead of every frame - the
+// per-frame rewrite storm is what caused the physics stutter/floating.
+// HRP only (invisible), teammates skipped, originals restored on toggle-off.
+
+struct HitboxEntry { uintptr_t prim; Vec3 orig; Vec3 expected; DWORD lastWrite; };
+static std::unordered_map<uintptr_t, HitboxEntry> g_hitboxMap;
+static std::vector<uintptr_t> g_hitboxParts;
+static DWORD g_hitboxScanAt = 0;
+static bool g_hitboxActive = false;
+
+static Vec3 HitboxExpected(const Vec3& orig)
+{
+    Vec3 ns{ orig.x * g_cfg.hitboxMult, orig.y * g_cfg.hitboxMult, orig.z * g_cfg.hitboxMult };
+    if (g_cfg.hitboxMaxStuds > 0.f)
+    {
+        if (ns.x > g_cfg.hitboxMaxStuds) ns.x = g_cfg.hitboxMaxStuds;
+        if (ns.y > g_cfg.hitboxMaxStuds) ns.y = g_cfg.hitboxMaxStuds;
+        if (ns.z > g_cfg.hitboxMaxStuds) ns.z = g_cfg.hitboxMaxStuds;
+    }
+    return ns;
+}
+
+static void RestoreHitboxes()
+{
+    for (auto& [part, e] : g_hitboxMap)
+        if (e.prim) g_mem.Write<Vec3>(e.prim + OFF("Primitive", "Size"), e.orig);
+    g_hitboxMap.clear();
+    g_hitboxParts.clear();
+}
+
+static void RunHitbox()
+{
+    static bool wasHeld = false;
+    static bool toggled = false, wasDown = false;
+    bool held = g_cfg.hitboxEnabled && g_mem.IsAttached() && GameFocused() &&
+        ActKey(g_cfg.hitboxKey, g_cfg.hitboxMode, toggled, wasDown);
+    if (!held)
+    {
+        if (wasHeld) RestoreHitboxes();
+        wasHeld = false;
+        g_hitboxActive = false;
+        return;
+    }
+    wasHeld = true;
+    g_hitboxActive = true;
+
+    DWORD now = GetTickCount();
+    auto& w = sdk::Get();
+    if (!w.localPlayer) return;
+    uintptr_t localTeam = g_mem.ReadPtr(w.localPlayer + OFF("Player", "Team"));
+
+    if (now >= g_hitboxScanAt)
+    {
+        g_hitboxScanAt = now + 500;
+        g_hitboxParts.clear();
+        std::unordered_set<uintptr_t> seen;
+        for (auto& [paddr, cp] : g_cache)
+        {
+            if (cp.character == 0) continue;
+            if (localTeam && cp.team == localTeam) continue;
+            if (cp.hrp) { g_hitboxParts.push_back(cp.hrp); seen.insert(cp.hrp); }
+        }
+        for (auto& n : g_npcs)
+            if (n.hrp) { g_hitboxParts.push_back(n.hrp); seen.insert(n.hrp); }
+        for (auto it = g_hitboxMap.begin(); it != g_hitboxMap.end();)
+            it = seen.count(it->first) ? std::next(it) : g_hitboxMap.erase(it);
+    }
+
+    // throttled writes: check drift at ~12hz per part, never every frame.
+    // roblox resets primitive size on its own schedule; 80ms is fast
+    // enough that the hitbox stays expanded without a write storm.
+    for (uintptr_t part : g_hitboxParts)
+    {
+        auto it = g_hitboxMap.find(part);
+        if (it == g_hitboxMap.end())
+        {
+            uintptr_t prim = g_mem.ReadPtr(part + OFF("BasePart", "Primitive"));
+            if (!prim) continue;
+            Vec3 orig = g_mem.Read<Vec3>(prim + OFF("Primitive", "Size"));
+            HitboxEntry e{ prim, orig, HitboxExpected(orig), 0 };
+            g_hitboxMap[part] = e;
+            it = g_hitboxMap.find(part);
+        }
+        HitboxEntry& e = it->second;
+        if (now - e.lastWrite < 80) continue;
+        Vec3 cur = g_mem.Read<Vec3>(e.prim + OFF("Primitive", "Size"));
+        if (cur.x != e.expected.x || cur.y != e.expected.y || cur.z != e.expected.z)
+        {
+            g_mem.Write<Vec3>(e.prim + OFF("Primitive", "Size"), e.expected);
+            e.lastWrite = now;
+        }
+    }
+}
+
+// ============================ HIT FIX + MOVEMENT DIAGNOSTIC ================
+// ---------------- movement diagnostic + hit fix ----------------
+// hitfix v44: plants HRP velocity during swing windows so hits register
+// consistently. v43 removed all writes because the old version held the
+// plant for the entire LMB-hold - that killed sprint. now the window is
+// a short ~100ms tail after each click and it never touches Y velocity
+// (jumps/gravity stay intact). velocity + spin are still read out for
+// the diagnostics panel.
 
 static uintptr_t g_hitfixHrp = 0, g_hitfixPrim = 0;
 static DWORD g_hitfixRefresh = 0;
 static Vec3 g_moveVel{}, g_moveAngVel{};
+
+static bool LocalToolIsBow()
+{
+    if (!g_mem.IsAttached()) return false;
+    static std::string tool;
+    static DWORD toolAt = 0;
+    DWORD now = GetTickCount();
+    if (now >= toolAt)
+    {
+        toolAt = now + 500;
+        tool.clear();
+        auto& w = sdk::Get();
+        if (w.localPlayer)
+        {
+            uintptr_t charAddr = g_mem.ReadPtr(w.localPlayer + OFF("Player", "ModelInstance"));
+            if (charAddr)
+                for (auto& c : Instance(charAddr).GetChildren())
+                    if (c.GetClassName() == "Tool") { tool = ToLower(c.GetName()); break; }
+        }
+    }
+    return tool.find("bow") != std::string::npos ||
+           tool.find("crossbow") != std::string::npos ||
+           tool.find("slingshot") != std::string::npos ||
+           tool.find("musket") != std::string::npos;
+}
 
 static void RunHitfix()
 {
@@ -988,11 +1111,13 @@ static void RunHitfix()
         g_moveVel = {}; g_moveAngVel = {};
         return;
     }
+    if (LocalToolIsBow()) return; // never plant while drawing a bow
+
+    DWORD now = GetTickCount();
 
     auto& w = sdk::Get();
     if (!w.localPlayer) { g_moveVel = {}; g_moveAngVel = {}; return; }
 
-    DWORD now = GetTickCount();
     if (now >= g_hitfixRefresh || !g_hitfixPrim)
     {
         g_hitfixRefresh = now + 500;
@@ -1012,9 +1137,24 @@ static void RunHitfix()
     }
     if (!g_hitfixPrim) { g_moveVel = {}; g_moveAngVel = {}; return; }
 
-    // read-only: linear + angular velocity for the diagnostics panel
+    // diagnostics always fresh - read-only, harmless
     g_moveVel = g_mem.Read<Vec3>(g_hitfixPrim + OFF("Primitive", "AssemblyLinearVelocity"));
     g_moveAngVel = g_mem.Read<Vec3>(g_hitfixPrim + OFF("Primitive", "AssemblyAngularVelocity"));
+
+    // short plant window: ~100ms after each fresh click, nothing more.
+    // the old version held this for the whole LMB press - that's what
+    // made sprint feel broken.
+    static DWORD swingUntil = 0;
+    if (GetAsyncKeyState(VK_LBUTTON) & 0x8000)
+        swingUntil = now + 100;
+    if (now > swingUntil) return;
+
+    // plant only inside the swing window: zero XZ drift + spin, keep Y
+    // so jumps and gravity are untouched
+    if (g_moveVel.x != 0.f || g_moveVel.z != 0.f)
+        g_mem.Write<Vec3>(g_hitfixPrim + OFF("Primitive", "AssemblyLinearVelocity"), { 0.f, g_moveVel.y, 0.f });
+    if (g_moveAngVel.x != 0.f || g_moveAngVel.y != 0.f || g_moveAngVel.z != 0.f)
+        g_mem.Write<Vec3>(g_hitfixPrim + OFF("Primitive", "AssemblyAngularVelocity"), { 0.f, 0.f, 0.f });
 }
 
 static uintptr_t LocalHrpPrimitive()
@@ -1059,6 +1199,7 @@ static bool PollRebind()
     }
     return false;
 }
+
 
 // ============================ MENU (imgui cards) ===========================
 // ---------------- nyx ui kit ----------------
@@ -1159,11 +1300,12 @@ static void MenuAim()
 
 static void CardHitboxExpander()
 {
-    ImGui::TextDisabled("Live hitbox expansion removed - it wrote");
-    ImGui::TextDisabled("Primitive.Size and destabilized physics.");
-    ImGui::Spacing();
-    ImGui::TextDisabled("Use Hitbox ESP (right column) for the");
-    ImGui::TextDisabled("read-only visual bounding boxes.");
+    ImGui::Checkbox("Enable Hitboxes", &g_cfg.hitboxEnabled);
+    ImGui::SliderFloat("Hitbox size", &g_cfg.hitboxMult, 1.f, 6.f, "%.1fx");
+    ImGui::SliderFloat("Max studs", &g_cfg.hitboxMaxStuds, 0.f, 30.f, "%.1f");
+    ImGui::Combo("Activation", &g_cfg.hitboxMode, kActModes, 3);
+    RebindButton("Key", &g_cfg.hitboxKey);
+    ImGui::TextDisabled("Expands enemy HRPs - rate-limited writes");
 }
 
 static void CardHitboxEsp()
@@ -1180,8 +1322,8 @@ static void CardHitboxEsp()
 
 static void CardHitFix()
 {
-    ImGui::Checkbox("Movement diagnostics", &g_cfg.hitfixEnabled);
-    ImGui::TextDisabled("Read-only - shows local velocity, no writes");
+    ImGui::Checkbox("Hit Fix", &g_cfg.hitfixEnabled);
+    ImGui::TextDisabled("Plants you ~100ms per click - sprint safe");
     if (g_cfg.hitfixEnabled)
     {
         ImGui::Text("Vel:  %.1f, %.1f, %.1f", g_moveVel.x, g_moveVel.y, g_moveVel.z);
@@ -1210,7 +1352,7 @@ static void CardPlayerEsp()
 
 
 // ============================================================================
-// END OF CONSOLIDATED FEATURES (v43)
-// Removed in v43: RunHitbox (Primitive.Size writes), RunHitfix velocity
-// writes, TryReachLunge/UpdateReachLunge/RunReachManual (Position writes).
+// END OF CONSOLIDATED FEATURES (v44)
+// Still removed: reach position writes (TryReachLunge/UpdateReachLunge/
+// RunReachManual). Hitbox writes are throttled to ~12hz per part.
 // ============================================================================
