@@ -296,7 +296,9 @@ BOOL APIENTRY DllMain(HMODULE mod, DWORD reason, LPVOID)
             CloseHandle(once);
             return TRUE;
         }
-        DisableThreadLibraryCalls(mod);
+        // NOTE: no DisableThreadLibraryCalls - it walks loader structures
+        // that don't fully exist for a manual-mapped image and can crash
+        // the host process. DLL_THREAD_ATTACH just returns TRUE anyway.
         // _beginthreadex (not CreateThread) so the CRT initializes the
         // new thread - Main uses fopen/regex/strings heavily
         _beginthreadex(nullptr, 0, Main, nullptr, 0, nullptr);

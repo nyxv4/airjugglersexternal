@@ -391,9 +391,10 @@ bool ManualMap(DWORD pid, const wchar_t* dllPath)
         printf("[mm] section protections applied\n");
     }
 
-    // register the image in the PEB module lists - hyperion validates
-    // thread start addresses against loaded modules; unlisted memory
-    // gets killed. also makes GetModuleHandleEx find us (CRT happy)
+    // register the image in the PEB module lists - DISABLED by default:
+    // a partial LDR_DATA_TABLE_ENTRY crashes loader walks. opt back in
+    // with MM_PEB_ENTRY=1 once the entry is fully populated
+    if (getenv("MM_PEB_ENTRY"))
     {
         typedef LONG NTSTATUS;
         struct PBI { PVOID Reserved1; PVOID PebBaseAddress; PVOID Reserved2[2]; ULONG_PTR UniqueProcessId; PVOID Reserved3; };
