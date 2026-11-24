@@ -68,7 +68,7 @@ void config::Load(const char* path)
     g_cfg.hitboxKey = toInt(get("hitbox_key", "67"), 67);
     g_cfg.hitboxMode = clampi(toInt(get("hitbox_mode", "2"), 2), 0, 2);
     g_cfg.hitboxMult = toFloat(get("hitbox_mult", "2.5"), 2.5f);
-    g_cfg.hitboxMaxStuds = toFloat(get("hitbox_max", "0"), 0.f);
+    g_cfg.hitboxMaxStuds = toFloat(get("hitbox_max", "14.4"), 14.4f);
     g_cfg.hitfixEnabled = get("hitfix_enabled", "0") == "1";
     g_cfg.silentBow = get("silent_bow", "0") == "1";
     g_cfg.killauraEnabled = get("killaura_enabled", "0") == "1";

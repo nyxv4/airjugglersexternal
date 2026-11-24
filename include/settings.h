@@ -51,7 +51,7 @@ struct Settings
     int hitboxKey = 0x43;        // C
     int hitboxMode = 2;          // scripts-style: on while enabled
     float hitboxMult = 2.5f;
-    float hitboxMaxStuds = 0.f;  // 0 = uncapped (14.4 for bedwars)
+    float hitboxMaxStuds = 14.4f; // per-axis cap (bedwars-safe default)
 
     // hit fix: plants your character while swinging so hits register
     // consistently regardless of ping/fps
@@ -103,7 +103,7 @@ struct Settings
 
 extern Settings g_cfg;
 
-inline const char* NYX_VERSION = "36";
+inline const char* NYX_VERSION = "37";
 
 namespace config
 {
