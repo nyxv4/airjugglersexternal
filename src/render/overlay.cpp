@@ -432,6 +432,7 @@ static const ObjEspDef kObjEsp[] = {
     { "hidden-metal", "METAL", IM_COL32(240, 200, 80, 255) },
     { "treeorb", "ELDER ORB", IM_COL32(90, 220, 120, 255) },
     { "natures_essence", "ESSENCE", IM_COL32(120, 230, 140, 255) },
+    { "beehive", "BEEHIVE", IM_COL32(240, 210, 60, 255) },
     { "tamedbee", "BEE", IM_COL32(240, 210, 60, 255) },
     { "bee", "BEE", IM_COL32(240, 210, 60, 255) },
     { "ghost_orb", "GHOST ORB", IM_COL32(170, 200, 240, 255) },
@@ -452,6 +453,24 @@ static const ObjEspDef kObjEsp[] = {
     { "landmine", "MINE", IM_COL32(160, 160, 60, 255) },
     { "tesla_trap", "TESLA", IM_COL32(120, 200, 240, 255) },
     { "venom_trap", "VENOM TRAP", IM_COL32(120, 200, 60, 255) },
+    // names as the game actually spells them (tags != names)
+    { "critstar", "CRIT STAR", IM_COL32(240, 220, 90, 255) },
+    { "vitalitystar", "VITALITY", IM_COL32(240, 220, 90, 255) },
+    { "mushroom", "SHROOM", IM_COL32(200, 120, 200, 255) },
+    { "hidden_metal", "METAL", IM_COL32(240, 200, 80, 255) },
+    { "hiddenmetal", "METAL", IM_COL32(240, 200, 80, 255) },
+    { "gravestone", "GRAVE", IM_COL32(160, 160, 170, 255) },
+    { "snow_pile", "SNOW PILE", IM_COL32(220, 235, 255, 255) },
+    { "snowpile", "SNOW PILE", IM_COL32(220, 235, 255, 255) },
+    { "desert_pot", "POT", IM_COL32(200, 140, 90, 255) },
+    { "enchant-table", "ENCHANT", IM_COL32(120, 200, 240, 255) },
+    { "enchanttable", "ENCHANT", IM_COL32(120, 200, 240, 255) },
+    { "owl", "OWL", IM_COL32(200, 200, 220, 255) },
+    { "evelynn", "SOUL", IM_COL32(170, 200, 240, 255) },
+    // farmer crops (DescendantKits)
+    { "carrot", "CARROT", IM_COL32(240, 140, 40, 255) },
+    { "melon", "MELON", IM_COL32(120, 220, 80, 255) },
+    { "pumpkin", "PUMPKIN", IM_COL32(240, 140, 30, 255) },
 };
 
 struct ObjEspEntry { uintptr_t part; char label[32]; ImU32 col; };
@@ -465,16 +484,29 @@ static bool IsPartClass(const std::string& c)
            c == "SpawnLocation" || c == "Seat" || c == "VehicleSeat";
 }
 
-// resolve a matched instance to a drawable part - the part itself, or a
-// model's first part child (bee models, orb models etc.)
-static uintptr_t ResolveObjPart(uintptr_t inst)
+// resolve a matched instance to a drawable part - the part itself, a
+// model's PrimaryPart, or a nested descendant part (kit objects nest
+// parts inside folders/models)
+static uintptr_t ResolveObjPart(uintptr_t inst, int depth = 0)
 {
     Instance in(inst);
     std::string cls = in.GetClassName();
     if (IsPartClass(cls)) return inst;
-    if (cls == "Model")
-        for (auto& c : in.GetChildren())
-            if (IsPartClass(c.GetClassName())) return c.addr;
+    if (cls != "Model" || depth > 3) return 0;
+
+    // kit collectables (hidden-metal, orbs, bees...) are Models whose
+    // PrimaryPart is the drawable piece - read it directly first
+    uintptr_t ppOff = OFF("Model", "PrimaryPart");
+    if (ppOff)
+    {
+        uintptr_t pp = g_mem.ReadPtr(inst + ppOff);
+        if (pp) return pp;
+    }
+    for (auto& c : in.GetChildren())
+    {
+        uintptr_t r = ResolveObjPart(c.addr, depth + 1);
+        if (r) return r;
+    }
     return 0;
 }
 
@@ -487,14 +519,18 @@ static void ScanObjectEsp()
     struct Frame { uintptr_t inst; int depth; };
     std::vector<Frame> stack{ { w.workspace, 0 } };
     std::unordered_set<uintptr_t> seenParts;
-    int budget = 5000; // hard cap on instances visited per scan
+    std::unordered_set<uintptr_t> seenModels;
+    static std::unordered_set<std::string> loggedCollectables;
+    int budget = 9000; // hard cap on instances visited per scan
 
     while (!stack.empty() && budget-- > 0)
     {
         Frame f = stack.back(); stack.pop_back();
         Instance in(f.inst);
+        std::string cls = in.GetClassName();
 
         std::string name = in.GetName();
+        bool matched = false;
         if (!name.empty())
         {
             for (auto& c : name) c = (char)tolower((unsigned char)c);
@@ -510,11 +546,55 @@ static void ScanObjectEsp()
                         snprintf(e.label, sizeof(e.label), "%s", d.label);
                         g_objEsp.push_back(e);
                     }
+                    matched = true;
                     break; // first matching def wins for this instance
                 }
             }
         }
-        if (f.depth < 6)
+
+        // kit collectables are CollectionService-tagged, not named - the
+        // tag never reaches us, but the models carry an 'Id' (or 'BeeId')
+        // replicated attribute + a PrimaryPart. check attrs only on
+        // Models that have one so the cost stays tiny.
+        if (!matched && cls == "Model" && !seenModels.count(f.inst))
+        {
+            seenModels.insert(f.inst);
+            uintptr_t ppOff = OFF("Model", "PrimaryPart");
+            if (ppOff && g_mem.ReadPtr(f.inst + ppOff))
+            {
+                auto attrs = in.GetAttributes(false);
+                bool hasId = false, isBee = false;
+                std::string attrDump;
+                for (auto& [k, v] : attrs)
+                {
+                    if (k == "Id") hasId = true;
+                    if (k == "BeeId") isBee = true;
+                    if (attrDump.size() < 200) { attrDump += k; attrDump += "="; attrDump += v; attrDump += ";"; }
+                }
+                if (!attrDump.empty() && loggedCollectables.insert(name).second)
+                    Log("[objesp] model='%s' attrs: %s", name.c_str(), attrDump.c_str());
+                if (hasId || isBee)
+                {
+                    uintptr_t part = ResolveObjPart(f.inst);
+                    if (part && !seenParts.count(part))
+                    {
+                        seenParts.insert(part);
+                        ObjEspEntry e{ part, "", isBee ? IM_COL32(240, 210, 60, 255)
+                                                       : IM_COL32(255, 214, 120, 255) };
+                        if (isBee) snprintf(e.label, sizeof(e.label), "BEE");
+                        else
+                        {
+                            std::string up = name;
+                            for (auto& ch : up) ch = (char)toupper((unsigned char)ch);
+                            // strip filler words, keep it short
+                            snprintf(e.label, sizeof(e.label), "%s", up.c_str());
+                        }
+                        g_objEsp.push_back(e);
+                    }
+                }
+            }
+        }
+        if (f.depth < 7)
             for (auto& c : in.GetChildren())
                 stack.push_back({ c.addr, f.depth + 1 });
     }
