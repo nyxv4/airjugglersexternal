@@ -640,18 +640,25 @@ static void DrawEsp(ImDrawList* dl)
         if (g_cfg.espBox)
             dl->AddRect({ p.x1, p.y1 }, { p.x2, p.y2 }, c, 0.f, 0, 1.5f);
 
-        if (g_cfg.espName && !p.name.empty())
+        // name + kit on one line, kit name beside the username - the
+        // combined block stays centered over the box
+        if ((g_cfg.espName && !p.name.empty()) || (g_cfg.espKit && !p.kit.empty()))
         {
-            ImVec2 ts = ImGui::CalcTextSize(p.name.c_str());
-            dl->AddText({ cx - ts.x / 2, p.y1 - ts.y - 2 }, c, p.name.c_str());
-        }
-        if (g_cfg.espKit && !p.kit.empty())
-        {
-            char kbuf[48]; snprintf(kbuf, sizeof(kbuf), "[%s]", p.kit.c_str());
-            ImVec2 ts = ImGui::CalcTextSize(kbuf);
-            float ky = p.y1 - ts.y - 2;
-            if (g_cfg.espName && !p.name.empty()) ky -= ts.y + 1;
-            dl->AddText({ cx - ts.x / 2, ky }, p.kitCol, kbuf);
+            char kbuf[48];
+            if (g_cfg.espKit && !p.kit.empty())
+                snprintf(kbuf, sizeof(kbuf), " [%s]", p.kit.c_str());
+            else kbuf[0] = 0;
+
+            bool hasName = g_cfg.espName && !p.name.empty();
+            bool hasKit = kbuf[0] != 0;
+            float nameW = hasName ? ImGui::CalcTextSize(p.name.c_str()).x : 0.f;
+            float kitW = hasKit ? ImGui::CalcTextSize(kbuf).x : 0.f;
+            float total = nameW + kitW;
+            float tx = cx - total / 2.f;
+            float ty = p.y1 - ImGui::GetTextLineHeight() - 2.f;
+
+            if (hasName) { dl->AddText({ tx, ty }, c, p.name.c_str()); tx += nameW; }
+            if (hasKit) dl->AddText({ tx, ty }, p.kitCol, kbuf);
         }
         if (g_cfg.espDistance)
         {
