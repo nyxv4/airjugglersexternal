@@ -7,3 +7,4 @@ x64/
 config/nyx.cfg
 nyx_debug.log
 imgui.ini
+internal/build/
