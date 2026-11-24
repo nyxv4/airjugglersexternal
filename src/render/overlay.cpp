@@ -198,6 +198,65 @@ static void RefreshPlayer(CachedPlayer& cp, const Instance& p)
 
 static Vec3 CachedLocalPos();
 
+// ---------------- npc/dummy scan (bedwars bots etc.) ----------------
+// dummies are Models in Workspace, not Player instances - scan for
+// models containing Head + HumanoidRootPart + Humanoid, ~every 3s
+
+struct NpcCache
+{
+    uintptr_t model = 0;
+    std::string name;
+    uintptr_t head = 0, hrp = 0, torso = 0, upper = 0, lower = 0, humanoid = 0;
+};
+static std::vector<NpcCache> g_npcs;
+static DWORD g_npcScanAt = 0;
+
+static void ScanNpcModel(uintptr_t maddr, const std::string& mname,
+                         const std::unordered_set<uintptr_t>& playerChars)
+{
+    if (playerChars.count(maddr)) return; // skip real player characters
+    Instance m(maddr);
+    NpcCache n; n.model = maddr; n.name = mname;
+    for (auto& c : m.GetChildren())
+    {
+        std::string cn = c.GetName();
+        if (cn == "Head") n.head = c.addr;
+        else if (cn == "HumanoidRootPart") n.hrp = c.addr;
+        else if (cn == "Torso") { n.torso = c.addr; if (!n.hrp) n.hrp = c.addr; }
+        else if (cn == "UpperTorso") n.upper = c.addr;
+        else if (cn == "LowerTorso") n.lower = c.addr;
+        if (!n.humanoid && c.GetClassName() == "Humanoid") n.humanoid = c.addr;
+    }
+    if (n.head && n.hrp && n.humanoid) g_npcs.push_back(n);
+}
+
+static void ScanNpcs()
+{
+    g_npcs.clear();
+    auto& w = sdk::Get();
+    if (!w.workspace) return;
+
+    std::unordered_set<uintptr_t> playerChars;
+    for (auto& [a, cp] : g_cache) if (cp.character) playerChars.insert(cp.character);
+
+    Instance ws(w.workspace);
+    for (auto& c : ws.GetChildren())
+    {
+        std::string cls = c.GetClassName();
+        if (cls == "Model")
+        {
+            ScanNpcModel(c.addr, c.GetName(), playerChars);
+        }
+        else if (cls == "Folder")
+        {
+            // dummies are often grouped in folders - one level deeper
+            for (auto& g : c.GetChildren())
+                if (g.GetClassName() == "Model")
+                    ScanNpcModel(g.addr, g.GetName(), playerChars);
+        }
+    }
+}
+
 static void CollectPlayers()
 {
     g_players.clear();
@@ -297,6 +356,62 @@ static void CollectPlayers()
         {
             pb.health = g_mem.Read<float>(cp.humanoid + OFF("Humanoid", "Health"));
             pb.maxHealth = g_mem.Read<float>(cp.humanoid + OFF("Humanoid", "MaxHealth"));
+        }
+
+        if (hok && fok)
+        {
+            float h = fs.y - hs.y;
+            float w = h * 0.55f;
+            pb.x1 = hs.x - w / 2; pb.x2 = hs.x + w / 2;
+            pb.y1 = hs.y - h * 0.08f; pb.y2 = fs.y;
+            pb.headX = hs.x; pb.headY = hs.y;
+        }
+        else if (rok)
+        {
+            float s = 3000.f / (dist + 1.f);
+            s = s < 10 ? 10 : (s > 80 ? 80 : s);
+            pb.x1 = rs.x - s / 2; pb.x2 = rs.x + s / 2;
+            pb.y1 = rs.y - s; pb.y2 = rs.y;
+            pb.headX = rs.x; pb.headY = pb.y1;
+        }
+        g_players.push_back(pb);
+    }
+
+    // npc/dummy pass (bedwars bots etc.) - rescan models ~every 3s
+    if (now >= g_npcScanAt) { g_npcScanAt = now + 3000; ScanNpcs(); }
+    for (auto& n : g_npcs)
+    {
+        if (Instance::PartTransparency(n.head) > 0.9f) continue;
+
+        Vec3 hp = Instance::PartPosition(n.head); hp.y += 0.4f;
+        Vec3 fp = Instance::PartPosition(n.hrp); fp.y -= 3.f;
+        Vec3 root = Instance::PartPosition(n.hrp);
+
+        Vec2 hs, fs, rs;
+        bool hok = sdk::WorldToScreen(hp, hs);
+        bool fok = sdk::WorldToScreen(fp, fs);
+        bool rok = sdk::WorldToScreen(root, rs);
+        if (!hok && !fok) continue;
+
+        float dist = sqrtf((localPos.x - root.x) * (localPos.x - root.x) +
+                           (localPos.z - root.z) * (localPos.z - root.z));
+        if (dist > 2000.f) continue;
+
+        PlayerBox pb{};
+        pb.name = n.name;
+        pb.headAddr = n.head;
+        pb.headWorld = hp;
+        pb.rootWorld = root;
+        {
+            uintptr_t hprim = g_mem.ReadPtr(n.head + OFF("BasePart", "Primitive"));
+            pb.headVel = hprim ? g_mem.Read<Vec3>(hprim + OFF("Primitive", "AssemblyLinearVelocity")) : Vec3{};
+        }
+        pb.dist = dist;
+        pb.teammate = false;
+        if (n.humanoid)
+        {
+            pb.health = g_mem.Read<float>(n.humanoid + OFF("Humanoid", "Health"));
+            pb.maxHealth = g_mem.Read<float>(n.humanoid + OFF("Humanoid", "MaxHealth"));
         }
 
         if (hok && fok)
@@ -604,6 +719,13 @@ static void RunHitbox()
             if (cp.character == 0) continue;
             if (localTeam && cp.team == localTeam) continue; // don't expand teammates
             uintptr_t parts[5] = { cp.head, cp.hrp, cp.torso, cp.upperTorso, cp.lowerTorso };
+            for (uintptr_t pa : parts)
+                if (pa) { g_hitboxParts.push_back(pa); seen.insert(pa); }
+        }
+        // dummies/npcs too - no team check, they're always enemies
+        for (auto& n : g_npcs)
+        {
+            uintptr_t parts[5] = { n.head, n.hrp, n.torso, n.upper, n.lower };
             for (uintptr_t pa : parts)
                 if (pa) { g_hitboxParts.push_back(pa); seen.insert(pa); }
         }
