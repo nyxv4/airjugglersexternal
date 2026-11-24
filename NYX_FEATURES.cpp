@@ -1,24 +1,17 @@
 // ============================================================================
-// NYX FEATURE SOURCE - consolidated reference (v42)
+// NYX FEATURE SOURCE - consolidated reference (v43 - post-audit)
 // ============================================================================
-// Everything for: HITBOXES (expander + ESP), AIM ASSIST, HIT FIX, KIT ESP.
+// Hitbox ESP (read-only), Aim Assist, Movement diagnostics (read-only),
+// Kit ESP. Live hitbox expansion, hitfix velocity writes and reach
+// position writes were REMOVED in v43 - no physics manipulation remains.
 //
-// THIS FILE DOES NOT COMPILE STANDALONE. It is a single-file extraction of
-// the feature code from src/render/overlay.cpp, in dependency order.
-// To build it, the project needs:
-//   - include/memory.h    (g_mem RPM/WPM, Memory class)
-//   - include/sdk.h       (Instance, sdk::Get(), WorldToScreen, Vec2/Vec3)
-//   - include/offsets.h   (OFF() macro, offsets::Ready())
-//   - include/settings.h  (Settings g_cfg - included below for reference)
-//   - ext/imgui/imgui.h   (menu card functions only)
-//   - windows.h           (SendInput, GetAsyncKeyState, GetForegroundWindow)
-//   - CollectPlayers()/g_players feed - see src/render/overlay.cpp
-//   - main loop calls: RunAimbot/RunHitbox/RunHitfix/DrawHitboxEsp/DrawEsp
-//     wired around overlay.cpp ~line 2600
+// THIS FILE DOES NOT COMPILE STANDALONE. Dependencies:
+//   include/memory.h, include/sdk.h, include/offsets.h, include/settings.h
+//   ext/imgui/imgui.h, windows.h, CollectPlayers()/g_players, main loop
+//   call sites in src/render/overlay.cpp (~line 2400).
 // ============================================================================
 
 // ============================ SETTINGS =====================================
-// (verbatim from include/settings.h - the fields these features use)
 struct Settings
 {
     // visuals
@@ -117,6 +110,8 @@ struct PlayerBox
     uintptr_t headAddr;
     std::string kit;
     ImU32 kitCol = 0;
+    bool kitAttr = false; // kit came from a replicated attribute (reliable)
+    bool isNpc = false;   // dummy/bot - kit ESP doesn't apply
     std::vector<uintptr_t> hitPrims; // primitive ptrs for hitbox esp
 };
 
@@ -128,7 +123,8 @@ static bool g_aimbotHadTarget = false;
 static bool g_aimbotActive = false;
 static Vec2 g_localScreen;
 static float g_localX, g_localY; // screen center of roblox client
-static DWORD g_lastSwingAt = 0; // last manual or injected click - hitfix window
+// (g_lastSwingAt removed - hitfix no longer tracks swing windows)
+
 
 // ============================ KIT ESP ======================================
 // ---------------- kit esp ----------------
@@ -297,6 +293,9 @@ struct CachedPlayer
     std::string name;
     std::string kit;
     ImU32 kitCol = 0;
+    bool kitAttr = false; // kit came from a replicated attribute (reliable)
+                        // vs a child-name guess (unreliable)
+    bool isNpc = false;   // dummy/bot - kit ESP doesn't apply
     DWORD refreshAt = 0;
     // primitive pointers for every body part - hitbox esp reads pos/size/
     // rotation straight off these, no per-frame child walks
@@ -322,7 +321,11 @@ static void RefreshPlayer(CachedPlayer& cp, const Instance& p)
     if (!ch) return;
 
     cp.kit.clear();
+    cp.kitAttr = false;
     auto tryKit = [&](const std::string& n) {
+        // name guesses fill in first but never override an
+        // attribute-sourced kit found later
+        if (!cp.kit.empty() && cp.kitAttr) return;
         if (cp.kit.empty())
             if (auto* k = MatchKit(ToLower(n))) { cp.kit = k->label; cp.kitCol = k->col; }
     };
@@ -352,17 +355,9 @@ static void RefreshPlayer(CachedPlayer& cp, const Instance& p)
             if (prim) cp.prims.push_back(prim);
         }
     }
-    // display names sometimes carry the kit ("xX_Kitslayer_Xx" etc.)
-    if (cp.kit.empty())
-    {
-        std::string dn = g_mem.ReadRobloxString(p.addr + OFF("Player", "DisplayName"));
-        tryKit(dn);
-    }
-    if (cp.kit.empty() && cp.humanoid)
-    {
-        std::string hd = g_mem.ReadRobloxString(cp.humanoid + OFF("Humanoid", "DisplayName"));
-        tryKit(hd);
-    }
+    // NOTE: display-name / humanoid-name guessing was removed - usernames
+    // are not kit identifiers and produced false kit labels. reliable
+    // sources only: replicated attributes (below) + instance names.
 
     // replicated attributes - bedwars stores kit in PlayingAsKits etc.
     // (readable externally since attributes replicate to the client).
@@ -384,7 +379,12 @@ static void RefreshPlayer(CachedPlayer& cp, const Instance& p)
                 {
                     std::string lk = ToLower(k);
                     if (lk.find("kit") != std::string::npos || lk.find("class") != std::string::npos)
-                        tryKit(v);
+                    {
+                        // attribute values are the documented kit id source
+                        // (PlayingAsKits=pyro etc.) - they override name guesses
+                        if (auto* k = MatchKit(ToLower(v)))
+                        { cp.kit = k->label; cp.kitCol = k->col; cp.kitAttr = true; }
+                    }
                     if (logThis && attrDump.size() < 400)
                     {
                         attrDump += tag; attrDump += ":"; attrDump += k;
@@ -403,6 +403,7 @@ static void RefreshPlayer(CachedPlayer& cp, const Instance& p)
     }
     cp.name = p.GetName();
 }
+
 static Vec3 CachedLocalPos();
 static ImU32 HitboxEspColor();
 
@@ -422,12 +423,23 @@ static void DrawEsp(ImDrawList* dl)
             dl->AddRect({ p.x1, p.y1 }, { p.x2, p.y2 }, c, 0.f, 0, 1.5f);
 
         // name + kit on one line, kit name beside the username - the
-        // combined block stays centered over the box
-        if ((g_cfg.espName && !p.name.empty()) || (g_cfg.espKit && !p.kit.empty()))
+        // combined block stays centered over the box. kit labels only
+        // render for attribute-sourced ids (PlayingAsKits etc.) - anything
+        // else shows UNKNOWN rather than a guessed name.
+        if ((g_cfg.espName && !p.name.empty()) || (g_cfg.espKit && !p.isNpc))
         {
             char kbuf[48];
-            if (g_cfg.espKit && !p.kit.empty())
-                snprintf(kbuf, sizeof(kbuf), " [%s]", p.kit.c_str());
+            ImU32 kitDrawCol = p.kitCol;
+            if (g_cfg.espKit && !p.isNpc)
+            {
+                if (p.kitAttr && !p.kit.empty())
+                    snprintf(kbuf, sizeof(kbuf), " [%s]", p.kit.c_str());
+                else
+                {
+                    snprintf(kbuf, sizeof(kbuf), " [UNKNOWN]");
+                    kitDrawCol = IM_COL32(130, 130, 145, 255);
+                }
+            }
             else kbuf[0] = 0;
 
             bool hasName = g_cfg.espName && !p.name.empty();
@@ -439,7 +451,7 @@ static void DrawEsp(ImDrawList* dl)
             float ty = p.y1 - ImGui::GetTextLineHeight() - 2.f;
 
             if (hasName) { dl->AddText({ tx, ty }, c, p.name.c_str()); tx += nameW; }
-            if (hasKit) dl->AddText({ tx, ty }, p.kitCol, kbuf);
+            if (hasKit) dl->AddText({ tx, ty }, kitDrawCol, kbuf);
         }
         if (g_cfg.espDistance)
         {
@@ -461,7 +473,7 @@ static void DrawEsp(ImDrawList* dl)
 }
 
 
-// ============================ HITBOX ESP ===================================
+// ============================ HITBOX ESP (read-only) =======================
 // ---------------- hitbox esp ----------------
 // draws each body part's real bounds: Primitive rotation+position+size
 // -> 8 corners -> view-projection -> screen rect. visual only - the
@@ -567,6 +579,7 @@ static void DrawHitboxEsp(ImDrawList* dl)
         }
     }
 }
+
 
 // ============================ INPUT HELPERS ================================
 // ---------------- input helpers ----------------
@@ -754,6 +767,7 @@ static bool IsBedWars()
     return g_isBedWars != 0; // unknown (-1) -> allow, don't break on read fail
 }
 
+
 // ============================ WALL CHECK (occluders) =======================
 // ---------------- wall check (occluder cache) ----------------
 // workspace parts that can block a shot. we can't raycast inside the
@@ -862,11 +876,10 @@ static bool RayBlocked(const Vec3& eye, const Vec3& tgt)
     return false;
 }
 
+
 // ============================ AIM ASSIST ===================================
 // ---------------- aimbot / hitbox / hitfix / reach ----------------
 
-static bool LocalToolIsBow();
-static void TryReachLunge(const Vec3& target);
 
 static void RunAimbot()
 {
@@ -954,174 +967,33 @@ static void RunAimbot()
     AimMove(mx, my);
 }
 
-// ============================ HITBOX EXPANDER ==============================
-// hitbox: cached primitive addrs + original sizes; we always write
-// orig*mult (never re-multiply the live size - that was the stutter bug)
-struct HitboxEntry { uintptr_t prim; Vec3 orig; Vec3 expected; };
-static std::unordered_map<uintptr_t, HitboxEntry> g_hitboxMap;
-static std::vector<uintptr_t> g_hitboxParts;
-static DWORD g_hitboxScanAt = 0;
-static bool g_hitboxActive = false; // for the on-screen indicator
 
-static Vec3 HitboxExpected(const Vec3& orig)
-{
-    Vec3 ns{ orig.x * g_cfg.hitboxMult, orig.y * g_cfg.hitboxMult, orig.z * g_cfg.hitboxMult };
-    if (g_cfg.hitboxMaxStuds > 0.f)
-    {
-        if (ns.x > g_cfg.hitboxMaxStuds) ns.x = g_cfg.hitboxMaxStuds;
-        if (ns.y > g_cfg.hitboxMaxStuds) ns.y = g_cfg.hitboxMaxStuds;
-        if (ns.z > g_cfg.hitboxMaxStuds) ns.z = g_cfg.hitboxMaxStuds;
-    }
-    return ns;
-}
-
-static void RestoreHitboxes()
-{
-    for (auto& [part, e] : g_hitboxMap)
-    {
-        if (e.prim) g_mem.Write<Vec3>(e.prim + OFF("Primitive", "Size"), e.orig);
-    }
-    g_hitboxMap.clear();
-    g_hitboxParts.clear();
-}
-
-static void RunHitbox()
-{
-    static bool wasHeld = false;
-    static bool toggled = false, wasDown = false;
-    bool held = g_cfg.hitboxEnabled && g_mem.IsAttached() && GameFocused() &&
-        ActKey(g_cfg.hitboxKey, g_cfg.hitboxMode, toggled, wasDown);
-    if (!held)
-    {
-        if (wasHeld) RestoreHitboxes();
-        wasHeld = false;
-        g_hitboxActive = false;
-        return;
-    }
-    wasHeld = true;
-    g_hitboxActive = true;
-
-    DWORD now = GetTickCount();
-    auto& w = sdk::Get();
-    if (!w.localPlayer) return;
-    uintptr_t localTeam = g_mem.ReadPtr(w.localPlayer + OFF("Player", "Team"));
-
-    // rescan the part list ~2hz using the player cache (cheap)
-    if (now >= g_hitboxScanAt)
-    {
-        g_hitboxScanAt = now + 500;
-        g_hitboxParts.clear();
-        std::unordered_set<uintptr_t> seen;
-        for (auto& [paddr, cp] : g_cache)
-        {
-            if (cp.character == 0) continue;
-            if (localTeam && cp.team == localTeam) continue; // don't expand teammates
-            // HumanoidRootPart only - it's invisible so the expanded
-            // hitbox doesn't render as a big box on the character
-            if (cp.hrp) { g_hitboxParts.push_back(cp.hrp); seen.insert(cp.hrp); }
-        }
-        // dummies/npcs too - no team check, they're always enemies
-        for (auto& n : g_npcs)
-            if (n.hrp) { g_hitboxParts.push_back(n.hrp); seen.insert(n.hrp); }
-        for (auto it = g_hitboxMap.begin(); it != g_hitboxMap.end();)
-            it = seen.count(it->first) ? std::next(it) : g_hitboxMap.erase(it);
-    }
-
-    // every frame: read current size, rewrite only if it drifted
-    // (roblox resets primitive size often - rewriting every frame is
-    // what stops the damage stutter)
-    static bool logged = false;
-    for (uintptr_t part : g_hitboxParts)
-    {
-        auto it = g_hitboxMap.find(part);
-        if (it == g_hitboxMap.end())
-        {
-            uintptr_t prim = g_mem.ReadPtr(part + OFF("BasePart", "Primitive"));
-            if (!prim) continue;
-            Vec3 orig = g_mem.Read<Vec3>(prim + OFF("Primitive", "Size"));
-            HitboxEntry e{ prim, orig, HitboxExpected(orig) };
-            g_hitboxMap[part] = e;
-            it = g_hitboxMap.find(part);
-            if (!logged)
-            {
-                logged = true;
-                Log("[nyx] hitbox expand part=0x%llx orig=(%.2f,%.2f,%.2f) -> (%.2f,%.2f,%.2f)",
-                    (unsigned long long)part, orig.x, orig.y, orig.z,
-                    e.expected.x, e.expected.y, e.expected.z);
-            }
-        }
-        HitboxEntry& e = it->second;
-        Vec3 cur = g_mem.Read<Vec3>(e.prim + OFF("Primitive", "Size"));
-        if (cur.x != e.expected.x || cur.y != e.expected.y || cur.z != e.expected.z)
-            g_mem.Write<Vec3>(e.prim + OFF("Primitive", "Size"), e.expected);
-    }
-
-// ---------------- equipped tool detection (silent bow aim) ----------------
-
-static std::string g_localTool;
-static DWORD g_toolRefresh = 0;
-
-static bool LocalToolIsBow()
-{
-    // detects the equipped tool - callers decide whether to use it
-    // what to do with it (silent aim, reach guard, hitfix guard)
-    if (!g_mem.IsAttached()) { g_localTool.clear(); return false; }
-    DWORD now = GetTickCount();
-    if (now >= g_toolRefresh)
-    {
-        g_toolRefresh = now + 500;
-        g_localTool.clear();
-        auto& w = sdk::Get();
-        if (w.localPlayer)
-        {
-            uintptr_t charAddr = g_mem.ReadPtr(w.localPlayer + OFF("Player", "ModelInstance"));
-            if (charAddr)
-            {
-                for (auto& c : Instance(charAddr).GetChildren())
-                    if (c.GetClassName() == "Tool") { g_localTool = ToLower(c.GetName()); break; }
-            }
-        }
-    }
-    return g_localTool.find("bow") != std::string::npos ||
-           g_localTool.find("crossbow") != std::string::npos ||
-           g_localTool.find("slingshot") != std::string::npos ||
-           g_localTool.find("musket") != std::string::npos;
-}
-
-// ============================ HIT FIX ======================================
-// ---------------- hit fix ----------------
-// while LMB is held, zero the local HRP's horizontal velocity so your
-// character stays planted during swings - hits register the same every
-// time regardless of ping/fps. closest external equivalent of the
-// executor hitfix (which hooks the sword function inside the game).
+// ============================ MOVEMENT DIAGNOSTIC (read-only) ==============
+// ---------------- movement diagnostic (read-only) ----------------
+// hitfix used to zero HRP velocity during swing windows - that fought
+// sprint and made movement unstable, so all physics writes are removed.
+// what remains is a read-only velocity readout for the menu panel;
+// nothing in this section modifies the game.
 
 static uintptr_t g_hitfixHrp = 0, g_hitfixPrim = 0;
 static DWORD g_hitfixRefresh = 0;
+static Vec3 g_moveVel{}, g_moveAngVel{};
 
 static void RunHitfix()
 {
     bool want = g_cfg.hitfixEnabled && g_mem.IsAttached() && GameFocused();
-    if (!want) { g_hitfixHrp = 0; g_hitfixRefresh = 0; return; }
-    if (LocalToolIsBow()) return; // don't plant your feet while drawing a bow
-
-    DWORD now = GetTickCount();
-    // edge-triggered swing window: only plant for ~180ms after each
-    // fresh click instead of the whole time LMB is held - zeroing
-    // velocity continuously is what was killing sprint speed
-    static DWORD swingUntil = 0;
-    if (GetAsyncKeyState(VK_LBUTTON) & 0x8000)
+    if (!want)
     {
-        g_lastSwingAt = now;
-        swingUntil = now + 180;
+        g_hitfixHrp = 0; g_hitfixPrim = 0; g_hitfixRefresh = 0;
+        g_moveVel = {}; g_moveAngVel = {};
+        return;
     }
-    else if (now - g_lastSwingAt < 200)
-        swingUntil = now + 60; // short tail after release
-    if (now > swingUntil) return;
 
     auto& w = sdk::Get();
-    if (!w.localPlayer) return;
+    if (!w.localPlayer) { g_moveVel = {}; g_moveAngVel = {}; return; }
 
-    if (now >= g_hitfixRefresh || !g_hitfixHrp)
+    DWORD now = GetTickCount();
+    if (now >= g_hitfixRefresh || !g_hitfixPrim)
     {
         g_hitfixRefresh = now + 500;
         uintptr_t charAddr = g_mem.ReadPtr(w.localPlayer + OFF("Player", "ModelInstance"));
@@ -1138,17 +1010,19 @@ static void RunHitfix()
         }
         g_hitfixPrim = g_hitfixHrp ? g_mem.ReadPtr(g_hitfixHrp + OFF("BasePart", "Primitive")) : 0;
     }
-    if (!g_hitfixPrim) return;
+    if (!g_hitfixPrim) { g_moveVel = {}; g_moveAngVel = {}; return; }
 
-    // kill both linear drift and spin - a rotating HRP during the swing
-    // window is one of the things that makes hits whiff at odd angles
-    Vec3 vel = g_mem.Read<Vec3>(g_hitfixPrim + OFF("Primitive", "AssemblyLinearVelocity"));
-    if (vel.x != 0.f || vel.z != 0.f)
-        g_mem.Write<Vec3>(g_hitfixPrim + OFF("Primitive", "AssemblyLinearVelocity"), { 0.f, vel.y, 0.f });
-    Vec3 ang = g_mem.Read<Vec3>(g_hitfixPrim + OFF("Primitive", "AssemblyAngularVelocity"));
-    if (ang.x != 0.f || ang.y != 0.f || ang.z != 0.f)
-        g_mem.Write<Vec3>(g_hitfixPrim + OFF("Primitive", "AssemblyAngularVelocity"), { 0.f, 0.f, 0.f });
+    // read-only: linear + angular velocity for the diagnostics panel
+    g_moveVel = g_mem.Read<Vec3>(g_hitfixPrim + OFF("Primitive", "AssemblyLinearVelocity"));
+    g_moveAngVel = g_mem.Read<Vec3>(g_hitfixPrim + OFF("Primitive", "AssemblyAngularVelocity"));
 }
+
+static uintptr_t LocalHrpPrimitive()
+{
+    if (!g_localHrpAddr) return 0;
+    return g_mem.ReadPtr(g_localHrpAddr + OFF("BasePart", "Primitive"));
+}
+
 
 // ============================ KEY REBIND ===================================
 // ---------------- key rebind ----------------
@@ -1235,6 +1109,7 @@ static ImU32 HitboxEspColor()
     if (g_cfg.espHitboxColor == 2) return IM_COL32(255, 255, 255, 255);
     return IM_COL32(255, 80, 80, 255);
 }
+
 static void MenuAim()
 {
     ImGui::Checkbox("Enabled", &g_cfg.aimbotEnabled);
@@ -1281,15 +1156,16 @@ static void MenuAim()
     ImGui::Checkbox("Health check", &g_cfg.aimbotHealthCheck);
     ImGui::Checkbox("Range check", &g_cfg.aimbotRangeCheck);
 }
+
 static void CardHitboxExpander()
 {
-    ImGui::Checkbox("Enable Hitboxes", &g_cfg.hitboxEnabled);
-    ImGui::SliderFloat("Hitbox size", &g_cfg.hitboxMult, 1.f, 6.f, "%.1fx");
-    ImGui::SliderFloat("Max studs", &g_cfg.hitboxMaxStuds, 0.f, 30.f, "%.1f");
-    ImGui::Combo("Activation", &g_cfg.hitboxMode, kActModes, 3);
-    RebindButton("Key", &g_cfg.hitboxKey);
-    ImGui::TextDisabled("Invisible - expands enemy hitboxes, doesn't change visuals");
+    ImGui::TextDisabled("Live hitbox expansion removed - it wrote");
+    ImGui::TextDisabled("Primitive.Size and destabilized physics.");
+    ImGui::Spacing();
+    ImGui::TextDisabled("Use Hitbox ESP (right column) for the");
+    ImGui::TextDisabled("read-only visual bounding boxes.");
 }
+
 static void CardHitboxEsp()
 {
     ImGui::Checkbox("Hitbox ESP", &g_cfg.espHitbox);
@@ -1301,11 +1177,25 @@ static void CardHitboxEsp()
     }
     ImGui::TextDisabled("Draws real body-part bounds - visual only");
 }
+
 static void CardHitFix()
 {
-    ImGui::Checkbox("Enabled##hitfix", &g_cfg.hitfixEnabled);
-    ImGui::TextDisabled("Zeroes velocity through the swing window - sprint safe");
+    ImGui::Checkbox("Movement diagnostics", &g_cfg.hitfixEnabled);
+    ImGui::TextDisabled("Read-only - shows local velocity, no writes");
+    if (g_cfg.hitfixEnabled)
+    {
+        ImGui::Text("Vel:  %.1f, %.1f, %.1f", g_moveVel.x, g_moveVel.y, g_moveVel.z);
+        ImGui::Text("Spin: %.1f, %.1f, %.1f", g_moveAngVel.x, g_moveAngVel.y, g_moveAngVel.z);
+    }
 }
+
+static void CardReach()
+{
+    ImGui::TextDisabled("Reach removed - it wrote HRP positions");
+    ImGui::TextDisabled("and caused random teleports. Distance");
+    ImGui::TextDisabled("ESP still shows enemy ranges.");
+}
+
 static void CardPlayerEsp()
 {
     ImGui::Checkbox("Box ESP", &g_cfg.espBox);
@@ -1318,8 +1208,9 @@ static void CardPlayerEsp()
     ImGui::Checkbox("Kit ESP", &g_cfg.espKit);
 }
 
+
 // ============================================================================
-// END OF CONSOLIDATED FEATURES
-// Runtime wiring lives in src/render/overlay.cpp main loop (~line 2600):
-//   RunAimbot(); RunHitbox(); RunHitfix(); DrawHitboxEsp(dl); DrawEsp(dl);
+// END OF CONSOLIDATED FEATURES (v43)
+// Removed in v43: RunHitbox (Primitive.Size writes), RunHitfix velocity
+// writes, TryReachLunge/UpdateReachLunge/RunReachManual (Position writes).
 // ============================================================================
