@@ -36,6 +36,18 @@ static void Log(const char* fmt, ...)
     f << buf << "\n";
 }
 
+// called from sdk.cpp attribute diagnostics
+void NyxAttrDebug(const char* fmt, ...)
+{
+    static std::mutex m;
+    std::lock_guard<std::mutex> lk(m);
+    std::ofstream f("nyx_debug.log", std::ios::app);
+    va_list ap; va_start(ap, fmt);
+    char buf[512]; vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+    f << "[attr] " << buf << "\n";
+}
+
 #define OFF(cls, field) offsets::Get(cls, field)
 #pragma comment(lib, "d3d11.lib")
 #pragma comment(lib, "dxgi.lib")
@@ -222,11 +234,13 @@ static void RefreshPlayer(CachedPlayer& cp, const Instance& p)
     // (readable externally since attributes replicate to the client)
     if (cp.kit.empty())
     {
-        static std::unordered_set<uintptr_t> attrLogged;
+        static std::unordered_set<uintptr_t> attrLogged, attrDbgDone;
         bool logThis = !attrLogged.count(p.addr);
+        bool dbg = logThis && !attrDbgDone.count(p.addr);
+        if (dbg) attrDbgDone.insert(p.addr);
         std::string attrDump;
         auto scanAttrs = [&](const Instance& inst, const char* tag) {
-            for (auto& [k, v] : inst.GetAttributes())
+            for (auto& [k, v] : inst.GetAttributes(dbg))
             {
                 std::string lk = ToLower(k);
                 if (lk.find("kit") != std::string::npos || lk.find("class") != std::string::npos)

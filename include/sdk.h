@@ -32,7 +32,8 @@ public:
     uintptr_t GetTeam() const;
 
     // replicated attributes (name -> string value); used for kit ESP etc.
-    std::vector<std::pair<std::string, std::string>> GetAttributes() const;
+    // debug=true logs each resolution stage once (diagnostics)
+    std::vector<std::pair<std::string, std::string>> GetAttributes(bool debug = false) const;
 
     // BasePart helpers
     static Vec3 PartPosition(uintptr_t partAddr);

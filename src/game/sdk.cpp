@@ -148,27 +148,34 @@ static std::string ReadAttrString(uintptr_t addr)
     return "";
 }
 
-std::vector<std::pair<std::string, std::string>> Instance::GetAttributes() const
+void NyxAttrDebug(const char* fmt, ...);
+
+std::vector<std::pair<std::string, std::string>> Instance::GetAttributes(bool debug) const
 {
     std::vector<std::pair<std::string, std::string>> out;
     if (!valid()) return out;
 
     uintptr_t compMap = g_mem.ReadPtr(addr + AttrOff::ComponentMap);
+    if (debug) NyxAttrDebug("inst=%llx compmap=%llx", (unsigned long long)addr, (unsigned long long)compMap);
     if (!compMap) return out;
     uintptr_t start = g_mem.ReadPtr(compMap);
     uintptr_t end   = g_mem.ReadPtr(compMap + 8);
+    if (debug) NyxAttrDebug("  vec start=%llx end=%llx", (unsigned long long)start, (unsigned long long)end);
     if (!start || end <= start || end - start > 0x10000) return out;
 
     uintptr_t attrs = 0;
     for (uintptr_t e = start; e < end; e += AttrOff::EntrySize)
     {
-        if (g_mem.Read<uint16_t>(e + 8) == AttrOff::ComponentIdAttrs)
+        uint16_t id = g_mem.Read<uint16_t>(e + 8);
+        uintptr_t comp = g_mem.ReadPtr(e);
+        if (debug) NyxAttrDebug("  entry=%llx comp=%llx id=%u", (unsigned long long)e, (unsigned long long)comp, (unsigned)id);
+        if (id == AttrOff::ComponentIdAttrs)
         {
-            attrs = g_mem.ReadPtr(e);
+            attrs = comp;
             break;
         }
     }
-    if (!attrs) return out;
+    if (!attrs) { if (debug) NyxAttrDebug("  no attributes component"); return out; }
 
     bool isMap = g_mem.Read<uint8_t>(attrs + AttrOff::IsMap) != 0;
     uintptr_t entries; int len;
@@ -182,16 +189,20 @@ std::vector<std::pair<std::string, std::string>> Instance::GetAttributes() const
         entries = g_mem.ReadPtr(attrs + AttrOff::ArrAttributes);
         len     = (int)g_mem.Read<uint32_t>(attrs + AttrOff::ArrLength);
     }
+    if (debug)
+        NyxAttrDebug("attrcomp=%llx isMap=%d len=%d entries=%llx", (unsigned long long)attrs, (int)isMap, len, (unsigned long long)entries);
     if (!entries || len <= 0 || len > AttrOff::MaxAttrs) return out;
 
     for (int i = 0; i < len; i++)
     {
         uintptr_t e = entries + (uintptr_t)i * AttrOff::AttrSize;
         uintptr_t keyPtr = g_mem.ReadPtr(e + AttrOff::AttrKey);
+        if (debug) NyxAttrDebug("  attr[%d] e=%llx keyptr=%llx", i, (unsigned long long)e, (unsigned long long)keyPtr);
         if (keyPtr < 0x10000) break;
         std::string key = g_mem.ReadString(keyPtr, 64);
         if (key.empty() || key.size() > 64) break;
         std::string val = ReadAttrString(e + AttrOff::AttrValue);
+        if (debug) NyxAttrDebug("    key='%s' val='%s'", key.c_str(), val.c_str());
         out.emplace_back(key, val);
     }
     return out;
