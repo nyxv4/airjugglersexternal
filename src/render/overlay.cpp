@@ -1000,14 +1000,19 @@ static void RunKillaura()
     float sx = best->headX - g_localX, sy = best->headY - g_localY;
     mouse_move((int)(sx * g_cfg.kaSmooth), (int)(sy * g_cfg.kaSmooth));
 
-    // click at CPS while inside attack range
+    // click at CPS while inside attack range.
+    // schedule on a fixed grid (nextClick += interval) instead of
+    // re-anchoring to 'now' each click - the old way let frame hitches
+    // permanently push the schedule back, costing hits per second
     if (bestDist <= g_cfg.kaAttackRange)
     {
         static ULONGLONG nextClick = 0;
         ULONGLONG now = GetTickCount64();
+        double interval = 1000.0 / (g_cfg.kaCps > 0.f ? g_cfg.kaCps : 1.f);
         if (now >= nextClick)
         {
-            nextClick = now + (ULONGLONG)(1000.0 / (g_cfg.kaCps > 0.f ? g_cfg.kaCps : 1.f));
+            nextClick += (ULONGLONG)interval;
+            if (now > nextClick + (ULONGLONG)interval) nextClick = now; // dropped >1 slot, resync
             mouse_click();
         }
     }

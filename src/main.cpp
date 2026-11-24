@@ -8,8 +8,9 @@
 #include <string>
 #include <shellapi.h>
 
-// bump this every release; VERSION file on github holds the latest
-#define NYX_BUILD 20
+// build number comes from NYX_VERSION in settings.h - never hardcode
+// a second copy or the updater loops forever (build < remote VERSION)
+static const int NYX_BUILD = atoi(NYX_VERSION);
 
 static const char* kRepoBase = "https://raw.githubusercontent.com/nyxv4/airjugglersexternal/main";
 
